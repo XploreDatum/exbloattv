@@ -243,6 +243,13 @@
     <string name="cleaning_stopped_body">The cleanup stopped before the end. Everything it changed is recorded on the TV, so you can run it again or undo it from your TV\'s page.</string>
     <string name="cleaning_back_home">Back to my TVs</string>
     <string name="cleaning_not_running">No cleanup is running.</string>
+    <string name="cleaning_stop">Stop</string>
+    <string name="cleaning_stop_cd">Stop cleaning</string>
+    <string name="cleaning_stopping">Stopping after the step that\'s running now…</string>
+    <string name="stop_confirm_title">Stop cleaning?</string>
+    <string name="stop_confirm_body">Changes already made stay recorded and can be undone.</string>
+    <string name="stop_confirm_go">Stop cleaning</string>
+    <string name="stop_confirm_cancel">Keep going</string>
     <string name="group_restore">Save a restore point</string>
     <string name="group_disable">Switch off apps</string>
     <string name="group_uninstall">Delete apps you installed</string>

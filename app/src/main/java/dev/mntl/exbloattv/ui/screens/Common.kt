@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
@@ -65,6 +66,8 @@ fun ExScreen(
     onBack: (() -> Unit)?,
     modifier: Modifier = Modifier,
     snackbar: SnackbarHostState? = null,
+    /** Shown at the end of the top bar, e.g. "Stop" while a cleanup runs. */
+    topAction: (@Composable RowScope.() -> Unit)? = null,
     actions: (@Composable ColumnScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -76,6 +79,10 @@ fun ExScreen(
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.back))
                         }
+                    }
+                    if (topAction != null) {
+                        Spacer(Modifier.weight(1f))
+                        topAction()
                     }
                 }
                 Column(

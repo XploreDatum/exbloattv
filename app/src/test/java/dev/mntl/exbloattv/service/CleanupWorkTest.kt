@@ -22,6 +22,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
@@ -75,6 +76,94 @@ class CleanupWorkTest {
         assertEquals(WorkState.Idle, work.state.value)
         assertTrue(work.startCleanup(request()))
         work.abandonCleanup()
+        appScope.cancel()
+    }
+
+    private fun TestScope.workOn(connector: AdbConnector, appScope: CoroutineScope) = CleanupWork(
+        connector = connector,
+        phoneName = { "Pixel · ab12" },
+        swapFor = { store, phone -> LauncherSwap(ApkDownloader(OkHttpClient(), File("build/tmp-apk")), store, phone) },
+        appScope = appScope,
+        settleSeconds = 0,
+        now = { testScheduler.currentTime },
+    )
+
+    @Test fun stopWhenTheRestorePointFailedBecauseAnotherPhoneHoldsTheLock() = runTest {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val tv = FakeTv()
+        // The runner CleanupWork builds checks the lock against the wall clock.
+        val held = """{"version":1,"serial":"MIBOX-SERIAL","lock":{"byPhone":"Mum's phone","at":${System.currentTimeMillis()}}}"""
+        tv.fs[TvStateStore.FILE] = held
+        val work = workOn(object : AdbConnector {
+            override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient = tv.adb
+        }, appScope)
+        assertTrue(work.startCleanup(request()))
+        advanceUntilIdle()
+        val p = (work.state.value as WorkState.Cleaning).progress!!
+        assertEquals(StepStatus.FAILED, p.steps[0].status)
+        assertFalse(p.waitingForTv)
+
+        work.abandonCleanup()
+        advanceUntilIdle()
+
+        assertEquals(WorkState.Idle, work.state.value)
+        assertFalse(work.state.value.busy)
+        assertEquals(held, tv.fs[TvStateStore.FILE]) // Mum's lock and log untouched
+        assertTrue(tv.adb.log.none { it.startsWith("pm ") })
+        assertTrue(work.startCleanup(request())) // free for the next job
+        work.abandonCleanup()
+        appScope.cancel()
+    }
+
+    @Test fun stopWhileWaitingForATvThatWentAwayMidRunKeepsWhatWasDone() = runTest {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val tv = FakeTv()
+        tv.installed += listOf("com.example.one", "com.example.two")
+        var off = false
+        tv.adb.onCommand.let { base ->
+            tv.adb.onCommand = { cmd ->
+                base(cmd)
+                if (cmd == "pm disable-user --user 0 com.example.two") off = true
+            }
+        }
+        val connector = object : AdbConnector {
+            override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient {
+                if (off) throw AdbError.Refused()
+                return object : AdbClient by tv.adb {
+                    override suspend fun shell(cmd: String) = if (off) throw AdbError.Disconnected() else tv.adb.shell(cmd)
+                    override fun close() = Unit
+                }
+            }
+        }
+        val work = workOn(connector, appScope)
+        val inv = MiBoxFixture.inventory()
+        val plan = listOf(Step.Disable("com.example.one"), Step.Disable("com.example.two"), Step.Disable("com.example.three"))
+        assertTrue(work.startCleanup(CleanupRequest(inv.info.serial, "h", "Mi Box 4", plan, inv, emptyMap())))
+        advanceUntilIdle()
+        val p = (work.state.value as WorkState.Cleaning).progress!!
+        assertTrue(p.waitingForTv)
+        assertEquals(StepStatus.DONE, p.steps[1].status)
+        assertEquals(StepStatus.FAILED, p.steps[2].status)
+
+        work.abandonCleanup()
+        advanceUntilIdle()
+
+        assertEquals(WorkState.Idle, work.state.value)
+        assertTrue(tv.adb.log.none { it.contains("com.example.three") })
+        val log = tv.fs.getValue(TvStateStore.FILE)
+        assertTrue(log.contains("com.example.one")) // what was done stays recorded for Undo
+        appScope.cancel()
+    }
+
+    @Test fun stopBeforeTheServiceTookTheJobDropsTheJob() = runTest {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val work = workOn(offTv, appScope).also { it.startService = { true } } // the service hasn't claimed it yet
+        assertTrue(work.startCleanup(request()))
+
+        work.abandonCleanup()
+
+        assertEquals(WorkState.Idle, work.state.value)
+        assertEquals(null, work.claimPending()) // the service, starting a moment later, finds nothing to run
         appScope.cancel()
     }
 

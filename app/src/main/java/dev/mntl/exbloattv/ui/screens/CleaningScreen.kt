@@ -18,16 +18,23 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PriorityHigh
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.WifiOff
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +48,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.mntl.exbloattv.R
+import dev.mntl.exbloattv.cleanup.CleanupRunner
 import dev.mntl.exbloattv.cleanup.RunProgress
 import dev.mntl.exbloattv.cleanup.Step
 import dev.mntl.exbloattv.cleanup.StepState
@@ -102,6 +110,36 @@ fun checklist(steps: List<StepState>): List<ChecklistLine> {
     }
 }
 
+/**
+ * What the Cleaning screen offers for the run as it is now. [terminal]: the message of a failure no Retry can fix
+ * (changed from another phone, or set up by a newer app version).
+ */
+data class RunActions(
+    val stop: Boolean,
+    val topStop: Boolean,
+    val finishAnyway: Boolean,
+    val checkAgain: Boolean,
+    val terminal: String?,
+)
+
+fun runActions(work: WorkState.Cleaning): RunActions {
+    val p = work.progress
+    val failed = p?.steps?.withIndex()?.filter { it.value.status == StepStatus.FAILED }.orEmpty()
+    val terminal = failed.firstOrNull { isChangedElsewhere(it.value.message) || isTooNew(it.value.message) }?.value?.message
+    // Every step is finished while settling or measuring: the result is moments away, so there is nothing to stop.
+    val stepsOver = work.settleSecondsLeft != null || work.measuring
+    return RunActions(
+        stop = !stepsOver && (failed.isNotEmpty() || p?.waitingForTv == true),
+        topStop = !stepsOver,
+        finishAnyway = terminal == null && failed.any { it.index != 0 },
+        checkAgain = isChangedElsewhere(terminal),
+        terminal = terminal,
+    )
+}
+
+/** The run stopped because a newer version of the app set this TV up. */
+fun isTooNew(message: String?): Boolean = message == CleanupRunner.TOO_NEW_MESSAGE
+
 @Composable
 fun stepText(step: Step, names: Map<String, String>): String = when (step) {
     is Step.Disable -> stringResource(R.string.step_disable, appName(step.pkg, names))
@@ -138,18 +176,39 @@ fun CleaningScreen(
     onUndo: (host: String, tvName: String) -> Unit,
     onAcknowledge: () -> Unit,
 ) {
+    // This scope outlives the Running screen, so a stop or re-check still navigates once the run has ended.
     val scope = rememberCoroutineScope()
     var confirmUndo by rememberSaveable { mutableStateOf(false) }
+    var confirmStop by rememberSaveable { mutableStateOf(false) }
+    // Not saveable: after the screen is recreated the stop is already under way and needs no button state.
+    var stopping by remember { mutableStateOf(false) }
     LaunchedEffect(work) {
         if (work is WorkState.Cleaned && work.serial == serial) onDone()
     }
     when {
-        work is WorkState.Cleaning && work.serial == serial -> Running(work, actions, onHome, onRecheck = {
-            scope.launch {
-                actions.abandonCleanup()
-                onRecheck()
+        work is WorkState.Cleaning && work.serial == serial -> {
+            Running(work, actions, onHome, stopping = stopping, onStop = { confirmStop = true }, onRecheck = {
+                scope.launch {
+                    actions.abandonCleanup()
+                    onRecheck()
+                }
+            })
+            if (confirmStop && !stopping) {
+                StopConfirmSheet(onDismiss = { confirmStop = false }, onConfirm = {
+                    confirmStop = false
+                    stopping = true
+                    scope.launch {
+                        try {
+                            // Waits for the step that is running to finish logging; the lock is then released.
+                            actions.abandonCleanup()
+                        } finally {
+                            stopping = false
+                        }
+                        onOpenTv() // the TV's page: its record of changes, and Undo
+                    }
+                })
             }
-        })
+        }
         work is WorkState.CleanupStopped && work.serial == serial -> {
             ExScreen(
                 onBack = { onAcknowledge(); onHome() },
@@ -189,16 +248,30 @@ fun CleaningScreen(
 }
 
 @Composable
-private fun Running(work: WorkState.Cleaning, actions: CleanupWork, onHome: () -> Unit, onRecheck: () -> Unit) {
+private fun Running(
+    work: WorkState.Cleaning,
+    actions: CleanupWork,
+    onHome: () -> Unit,
+    stopping: Boolean,
+    onStop: () -> Unit,
+    onRecheck: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val p = work.progress
-    val failed = p?.steps?.withIndex()?.filter { it.value.status == StepStatus.FAILED }.orEmpty()
-    val changedElsewhere = failed.firstOrNull { isChangedElsewhere(it.value.message) }
-    val canFinish = changedElsewhere == null && failed.any { it.index != 0 }
+    val a = runActions(work)
+    val stopCd = stringResource(R.string.cleaning_stop_cd)
     ExScreen(
         onBack = onHome,
+        topAction = if (a.topStop && !stopping) {
+            {
+                TextButton(onClick = onStop, modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = stopCd }) {
+                    Text(stringResource(R.string.cleaning_stop))
+                }
+            }
+        } else null,
         actions = when {
-            changedElsewhere != null -> {
+            stopping -> null
+            a.checkAgain -> {
                 {
                     PrimaryButton(stringResource(R.string.cleaning_check_again), onClick = onRecheck)
                     Text(
@@ -207,9 +280,10 @@ private fun Running(work: WorkState.Cleaning, actions: CleanupWork, onHome: () -
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
+                    QuietButton(stringResource(R.string.stop_confirm_go), onClick = onStop)
                 }
             }
-            canFinish -> {
+            a.finishAnyway -> {
                 {
                     PrimaryButton(stringResource(R.string.cleaning_finish_anyway), onClick = { scope.launch { actions.finishAnyway() } })
                     Text(
@@ -218,7 +292,15 @@ private fun Running(work: WorkState.Cleaning, actions: CleanupWork, onHome: () -
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
+                    QuietButton(stringResource(R.string.stop_confirm_go), onClick = onStop)
                 }
+            }
+            // Nothing else gets this run going again (a newer app set the TV up): stopping is the way out.
+            a.terminal != null -> {
+                { PrimaryButton(stringResource(R.string.stop_confirm_go), onClick = onStop) }
+            }
+            a.stop -> {
+                { QuietButton(stringResource(R.string.stop_confirm_go), onClick = onStop) }
             }
             else -> null
         },
@@ -233,7 +315,8 @@ private fun Running(work: WorkState.Cleaning, actions: CleanupWork, onHome: () -
             if (p == null || settling) LinearWavyProgressIndicator(Modifier.fillMaxWidth())
             else LinearWavyProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
         }
-        if (p?.waitingForTv == true) {
+        if (stopping) Busy(stringResource(R.string.cleaning_stopping))
+        if (p?.waitingForTv == true && !stopping) {
             Banner(stringResource(R.string.cleaning_cant_reach), stringResource(R.string.cleaning_retry)) { scope.launch { actions.retryAll() } }
         }
         when {
@@ -241,10 +324,10 @@ private fun Running(work: WorkState.Cleaning, actions: CleanupWork, onHome: () -
             work.measuring -> Busy(stringResource(R.string.cleaning_measuring))
             p == null -> Busy(stringResource(R.string.cleaning_starting))
         }
-        if (p != null) Checklist(p, work.appNames, actions.takeIf { changedElsewhere == null })
-        if (changedElsewhere != null) {
+        if (p != null) Checklist(p, work.appNames, actions.takeIf { a.terminal == null && !stopping })
+        if (a.terminal != null) {
             VSpace(12)
-            Text(changedElsewhere.value.message.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            Text(a.terminal, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
         }
         VSpace(14)
         Text(
@@ -293,7 +376,7 @@ private fun Checklist(p: RunProgress, names: Map<String, String>, actions: Clean
                 LineRow(line, li + 1)
                 for (i in line.indices) {
                     val s = p.steps[i]
-                    if (s.status != StepStatus.FAILED || isChangedElsewhere(s.message)) continue
+                    if (s.status != StepStatus.FAILED || isChangedElsewhere(s.message) || isTooNew(s.message)) continue
                     FailedStep(
                         text = stepText(s.step, names),
                         message = s.message,
@@ -378,3 +461,16 @@ private fun FailedStep(text: String, message: String?, index: Int, onRetry: (() 
     }
 }
 
+/** "Stop cleaning?": ends the run; what was already changed stays logged on the TV, so Undo can put it back. */
+@Composable
+private fun StopConfirmSheet(onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 16.dp).navigationBarsPadding()) {
+            Text(stringResource(R.string.stop_confirm_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 12.dp))
+            Text(stringResource(R.string.stop_confirm_body), style = MaterialTheme.typography.bodyLarge)
+            VSpace(18)
+            PrimaryButton(stringResource(R.string.stop_confirm_go), onClick = onConfirm)
+            QuietButton(stringResource(R.string.stop_confirm_cancel), onClick = onDismiss)
+        }
+    }
+}

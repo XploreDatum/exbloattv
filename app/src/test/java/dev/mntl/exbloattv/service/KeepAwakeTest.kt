@@ -40,4 +40,49 @@ class KeepAwakeTest {
         runCurrent()
         assertEquals(listOf("acquire", "work", "release"), r.events)
     }
+
+    /** A manual clock: [fire] runs whatever timeouts are still scheduled. */
+    private class Timer {
+        val pending = mutableListOf<Pair<Long, () -> Unit>>()
+        val schedule: (Long, () -> Unit) -> (() -> Unit) = { ms, r ->
+            val e = ms to r
+            pending += e
+            ({ pending.remove(e) })
+        }
+        fun fire() = pending.toList().also { pending.clear() }.forEach { it.second() }
+    }
+
+    @Test fun theTimeoutReleasesWakeAndWifiTogether() {
+        val t = Timer()
+        val events = mutableListOf<String>()
+        val hold = TimedHold(30_000, t.schedule, take = { events += "take" }, drop = { events += "drop" })
+        hold.acquire()
+        assertEquals(listOf(30_000L), t.pending.map { it.first })
+        t.fire() // the job never released (e.g. stuck): both locks still go
+        assertEquals(listOf("take", "drop"), events)
+        hold.release() // releasing after the timeout is harmless
+        assertEquals(listOf("take", "drop", "drop"), events)
+    }
+
+    @Test fun releasingCancelsTheTimeout() {
+        val t = Timer()
+        val events = mutableListOf<String>()
+        val hold = TimedHold(30_000, t.schedule, take = { events += "take" }, drop = { events += "drop" })
+        hold.acquire()
+        hold.release()
+        assertEquals(emptyList<Any>(), t.pending)
+        assertEquals(listOf("take", "drop"), events)
+    }
+
+    @Test fun anOldTimeoutNeverDropsANewerHold() {
+        val t = Timer()
+        val events = mutableListOf<String>()
+        val hold = TimedHold(30_000, t.schedule, take = { events += "take" }, drop = { events += "drop" })
+        hold.acquire()
+        val stale = t.pending.single().second
+        hold.release()
+        hold.acquire()
+        stale() // a timeout already on its way when the first hold was released
+        assertEquals(listOf("take", "drop", "take"), events)
+    }
 }

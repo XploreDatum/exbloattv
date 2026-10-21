@@ -180,10 +180,14 @@ class CleanupWork(
 
     /**
      * Ends the current cleanup without a result (the runner releases the TV lock as it is cancelled), e.g. when the
-     * TV was changed from another phone and must be read again. The state goes back to [WorkState.Idle].
+     * TV was changed from another phone and must be read again, or the person tapped Stop. A step already running
+     * finishes and logs first; what was done stays in the TV's change log for Undo. The state goes back to
+     * [WorkState.Idle].
      */
     suspend fun abandonCleanup() {
         if (_state.value !is WorkState.Cleaning) return
+        // Not taken by the service yet ("Starting…"): drop it, so it never starts after the person stopped it.
+        (pending.get() as? Job.Clean)?.let { pending.compareAndSet(it, null) }
         abandoned = true
         running?.let {
             it.cancel()
