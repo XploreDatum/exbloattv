@@ -556,20 +556,42 @@ class CleanupRunner(
             return Outcome.Failed("Couldn't switch this app on")
         }
 
+        /**
+         * Brings back an app removed for this user, then makes sure it is switched on (like Undo's install-existing):
+         * an earlier half-applied switch-off can bring it back switched off. Two changes, each logged and verified:
+         * INSTALL_EXISTING, then ENABLE only if it had to be switched on.
+         */
         private suspend fun installExisting(adb: AdbClient, i: Int, pkg: String): Outcome {
             var entry = inflight["$i"]
-            if (listed(adb, "", pkg)) {
+            if (entry == null || entry.kind == ChangeKind.INSTALL_EXISTING) {
+                if (!listed(adb, "", pkg)) {
+                    val e = entry ?: begin("$i", ChangeKind.INSTALL_EXISTING, pkg, REMOVED, "installed")
+                    adb.shell("cmd package install-existing $pkg")
+                    if (!listed(adb, "", pkg)) {
+                        discard("$i", e)
+                        return Outcome.Failed("Couldn't bring this app back")
+                    }
+                    entry = e
+                }
+                entry?.let { confirm("$i", it) }
+                entry = null
+            }
+            if (listed(adb, "-e", pkg)) {
                 entry?.let { confirm("$i", it) }
                 return Outcome.Done()
             }
-            if (entry == null) entry = begin("$i", ChangeKind.INSTALL_EXISTING, pkg, REMOVED, "installed")
-            adb.shell("cmd package install-existing $pkg")
-            if (listed(adb, "", pkg)) {
-                confirm("$i", entry)
+            if (!listed(adb, "-d", pkg)) {
+                entry?.let { discard("$i", it) }
+                return Outcome.Failed("This app isn't on the TV any more")
+            }
+            val on = entry ?: begin("$i", ChangeKind.ENABLE, pkg, "disabled", "enabled")
+            adb.shell("pm enable $pkg")
+            if (listed(adb, "-e", pkg)) {
+                confirm("$i", on)
                 return Outcome.Done()
             }
-            discard("$i", entry)
-            return Outcome.Failed("Couldn't bring this app back")
+            discard("$i", on)
+            return Outcome.Failed("This app came back but is still switched off")
         }
 
         private suspend fun uninstall(adb: AdbClient, i: Int, pkg: String): Outcome {

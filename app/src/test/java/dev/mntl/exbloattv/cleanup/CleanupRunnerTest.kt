@@ -281,6 +281,7 @@ class CleanupRunnerTest {
             RESOLVE_HOME, "pm list packages -d $ADS", "pm list packages $ADS", disableCmd(ADS), "pm list packages -d $ADS",
             "pm list packages -e $GAMES", "pm list packages -d $GAMES", "pm enable $GAMES", "pm list packages -e $GAMES",
             "pm list packages $MUSIC", "cmd package install-existing $MUSIC", "pm list packages $MUSIC",
+            "pm list packages -e $MUSIC",
             RESOLVE_HOME, "pm list packages $USERAPP", "pm list packages -3 $USERAPP", "pm uninstall $USERAPP",
             "pm list packages $USERAPP",
             "settings get global window_animation_scale", "settings get global transition_animation_scale",
@@ -516,6 +517,46 @@ class CleanupRunnerTest {
         assertThat(c.last.steps[1].message).isEqualTo("Couldn't check the TV (home screen apps). Tap Retry")
         assertThat(tvCommands()).doesNotContain(disableCmd(ADS))
         c.job.cancel()
+    }
+
+    @Test fun anAppThatComesBackSwitchedOffIsSwitchedOnToo() = runTest {
+        tv.disabled += MUSIC // it was half switched off before it was removed
+
+        val last = runner().run(listOf(Step.InstallExisting(MUSIC)), before()).toList().last()
+
+        assertThat(last.steps[1].status).isEqualTo(DONE)
+        assertThat(tv.installed).contains(MUSIC)
+        assertThat(tv.disabled).doesNotContain(MUSIC)
+        assertThat(tvCommands()).containsExactly(
+            "pm list packages $MUSIC", "cmd package install-existing $MUSIC", "pm list packages $MUSIC",
+            "pm list packages -e $MUSIC", "pm list packages -d $MUSIC", "pm enable $MUSIC", "pm list packages -e $MUSIC",
+        ).inOrder()
+        assertThat(state().changes.map { Triple(it.kind, it.pkg, it.verified) }).containsExactly(
+            Triple(ChangeKind.INSTALL_EXISTING, MUSIC, true), Triple(ChangeKind.ENABLE, MUSIC, true),
+        ).inOrder()
+    }
+
+    @Test fun anAppThatComesBackButStaysOffIsNotDone() = runTest {
+        tv.disabled += MUSIC
+        tv.failingEnables += MUSIC
+        val runner = runner()
+
+        val c = start(runner, listOf(Step.InstallExisting(MUSIC)))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED))
+        assertThat(c.last.steps[1].message).isEqualTo("This app came back but is still switched off")
+        // It did come back, so that stays logged for Undo; the switch-on that didn't take is not logged.
+        assertThat(state().changes.map { Triple(it.kind, it.pkg, it.verified) })
+            .containsExactly(Triple(ChangeKind.INSTALL_EXISTING, MUSIC, true))
+
+        tv.failingEnables -= MUSIC
+        runner.retry(1)
+        advanceUntilIdle()
+        assertThat(c.statuses).isEqualTo(listOf(DONE, DONE))
+        assertThat(tv.disabled).doesNotContain(MUSIC)
+        assertThat(tvCommands().count { it == "cmd package install-existing $MUSIC" }).isEqualTo(1)
+        assertThat(state().changes.map { it.kind }).containsExactly(ChangeKind.INSTALL_EXISTING, ChangeKind.ENABLE).inOrder()
     }
 
     @Test fun enableThatDoesNotTakeFailsAndLogsNothing() = runTest {
