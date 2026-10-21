@@ -1,4 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ExBloat TV</string>
+    <string name="notif_channel_work">Cleaning up</string>
+    <string name="notif_channel_result">Results</string>
+    <string name="notif_cleaning_title">Cleaning up %1$s…</string>
+    <string name="notif_undoing_title">Undoing changes on %1$s…</string>
+    <string name="notif_working">Working on your TV…</string>
+    <string name="notif_leave_remote">Leave the remote alone for a minute.</string>
+    <string name="notif_checking">Checking the TV after the restart…</string>
+    <string name="notif_needs_you">Needs you: open the app to carry on.</string>
+    <string name="notif_cleaned_title">%1$s is clean</string>
+    <string name="notif_cleaned_text">Open the app to see what changed.</string>
+    <string name="notif_stopped_title">Cleanup of %1$s stopped</string>
+    <string name="notif_undone_title">Undo finished on %1$s</string>
+    <string name="notif_undo_failed_title">Couldn\'t undo everything on %1$s</string>
+    <string name="notif_open_app">Open the app for details.</string>
 </resources>
