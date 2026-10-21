@@ -268,8 +268,10 @@ class LauncherSwap(
         withContext(NonCancellable) {
             val entries = onStore(adb) { store.load(serial) }.changes.filter { it.id.startsWith("$swapId:") }
             val disabled = entries.filter { it.kind == ChangeKind.DISABLE }.mapNotNull { it.pkg }
+            // Names come from the shared log: never put one in a command unchecked. An invalid one stays logged and
+            // counts as not restored, so FLauncher stays too.
             val restored = disabled.asReversed().filter { pkg ->
-                attempt { sh(adb, "pm enable $pkg"); listed(adb, "-e", pkg) }
+                isPackageName(pkg) && attempt { sh(adb, "pm enable $pkg"); listed(adb, "-e", pkg) }
             }
             val allRestored = restored.size == disabled.size
             val realHomes = attemptOrNull { homePackages(adb) }.orEmpty().filter { it !in NOT_A_REAL_HOME }

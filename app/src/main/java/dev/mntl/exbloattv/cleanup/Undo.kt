@@ -479,8 +479,6 @@ class Undo(
         const val RUN_ANY_IN_BACKGROUND = "RUN_ANY_IN_BACKGROUND"
         val APPOPS = setOf(RUN_ANY_IN_BACKGROUND, "RUN_IN_BACKGROUND")
         val APPOP_MODES = setOf("allow", "ignore", "deny", "default", "foreground")
-        val PACKAGE = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+""")
-        fun isPackageName(s: String) = PACKAGE.matches(s)
         const val HOME_KEY = "input keyevent KEYCODE_HOME"
         const val RESOLVE_HOME =
             "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME"
@@ -492,3 +490,8 @@ class Undo(
         const val STORE_TIMEOUT_MS = 30_000L
     }
 }
+
+/** A plausible app package name. Names read from the shared log go into a TV command only if they pass. */
+internal fun isPackageName(s: String) = PACKAGE_NAME.matches(s)
+
+private val PACKAGE_NAME = Regex("""[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+""")

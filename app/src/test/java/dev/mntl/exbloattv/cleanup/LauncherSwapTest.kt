@@ -12,6 +12,7 @@ import dev.mntl.exbloattv.cleanup.FakeTv.Companion.STOCK
 import dev.mntl.exbloattv.cleanup.FakeTv.Companion.TV_SETTINGS
 import dev.mntl.exbloattv.state.Change
 import dev.mntl.exbloattv.state.ChangeKind
+import dev.mntl.exbloattv.state.TvState
 import dev.mntl.exbloattv.state.TvStateStore
 import dev.mntl.exbloattv.state.TvStateWriteException
 import dev.mntl.exbloattv.tv.TvReadException
@@ -456,6 +457,34 @@ class LauncherSwapTest {
             ChangeKind.INSTALL_APK, ChangeKind.DISABLE, ChangeKind.DISABLE, ChangeKind.LAUNCHER_SWAP,
         ).inOrder()
         assertThat(changes().all { it.verified }).isTrue()
+    }
+
+    @Test fun rollbackNeverRunsACommandWithAnInvalidPackageNameFromTheLog() = runTest {
+        // An interrupted swap whose log holds a damaged (or hostile) package name next to a real one.
+        val bad = "com.x;reboot"
+        tv.installed += FLAUNCHER_PKG
+        tv.disabled += STOCK
+        val id = "swap-1-abcd1234"
+        TvStateStore(tv.adb).save(
+            TvState(
+                serial = serial,
+                changes = listOf(
+                    Change("$id:install", ChangeKind.INSTALL_APK, FLAUNCHER_PKG, "absent", "installed", "Pixel 8", 1, true),
+                    Change("$id:disable:$STOCK", ChangeKind.DISABLE, STOCK, "enabled", "disabled", "Pixel 8", 2, true),
+                    Change("$id:disable:$bad", ChangeKind.DISABLE, bad, "enabled", "disabled", "Pixel 8", 3, true),
+                ),
+            ),
+        )
+
+        val r = swapper().recover(tv.adb, serial)
+
+        assertThat(r).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tvCommands().none { "reboot" in it || "com.x" in it }).isTrue()
+        assertThat(tvCommands()).contains("pm enable $STOCK")
+        // Not everything the swap switched off came back, so FLauncher stays and the bad entry stays logged.
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        assertThat(changes().map { it.pkg }).contains(bad)
+        assertThat(changes().map { it.pkg }).doesNotContain(STOCK)
     }
 
     @Test fun recoverWithNothingLoggedDoesNothing() = runTest {
