@@ -128,6 +128,19 @@ class KeepViewModelTest {
         assertFalse(r.choices.deleteUserApps) // never remembered: asked fresh every time
     }
 
+    @Test fun appsRemovedForTheUserShowOffAndCanBeBroughtBack() {
+        val inv = MiBoxFixture.inventory().let { it.copy(removedForUser = setOf("com.google.android.videos")) }
+            .let { i -> i.copy(packages = i.packages.filterNot { it.name == "com.google.android.videos" }) }
+        val v = vm(MiBoxFixture.loaded(inv))
+        val row = v.ready().row("com.google.android.videos")
+        assertFalse(row.keep)
+        assertTrue(row.toggleable)
+        assertTrue(v.ready().plan.none { it is Step.Disable && it.pkg == "com.google.android.videos" })
+        v.setKeep("com.google.android.videos", true)
+        assertTrue(Step.InstallExisting("com.google.android.videos") in v.ready().plan)
+        assertEquals(1, v.ready().review.switchOn)
+    }
+
     @Test fun loadFailureCanBeRetried() {
         var calls = 0
         val v = KeepViewModel(load = { if (calls++ == 0) error("no tv") else MiBoxFixture.loaded() }, savedChoices = { null })

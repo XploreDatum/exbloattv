@@ -47,6 +47,35 @@ class TvInspectorTest {
         assertThat(inv.launchable).containsAtLeast("me.efesser.flauncher", "com.netflix.ninja")
     }
 
+    @Test fun appsRemovedForTheUserAreThoseOnlyListedWithMinusU() {
+        val adb = fake()
+        // `-u` lists everything the normal list has, plus what was removed for the user.
+        adb.responses["pm list packages -u"] = """
+            package:mitv.service
+            package:com.netflix.ninja
+            package:com.example.removed.ads
+            package:com.example.removed.extras
+        """.trimIndent()
+        val inv = read(adb)
+        assertThat(inv.removedForUser).containsExactly("com.example.removed.ads", "com.example.removed.extras")
+        assertThat(inv.packages.map { it.name }).containsNoneOf("com.example.removed.ads", "com.example.removed.extras")
+    }
+
+    @Test fun noAppsRemovedForTheUser() {
+        assertThat(read(fake()).removedForUser).isEmpty()
+        // Inventories saved before this field existed have no "removedForUser" key and still decode.
+        val saved = Json.encodeToString(Inventory.serializer(), read(fake()))
+        assertThat(saved).doesNotContain("removedForUser")
+        val old = Json.decodeFromString(Inventory.serializer(), saved)
+        assertThat(old.removedForUser).isEmpty()
+    }
+
+    @Test fun removedListThatReportsAnErrorFailsTheRead() {
+        val adb = fake()
+        adb.exitCodes["pm list packages -u"] = 1
+        assertThrows(TvReadException::class.java) { read(adb) }
+    }
+
     @Test fun serialFallsBackToBootSerialThenModel() {
         val base = Fixtures.text("getprop.txt")
         assertThat(read(fake()).info.serial).isEqualTo("unknown-MIBOX4")

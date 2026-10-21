@@ -3,6 +3,7 @@ package dev.mntl.exbloattv.ui.screens
 import dev.mntl.exbloattv.catalog.Catalog
 import dev.mntl.exbloattv.catalog.Categorizer
 import dev.mntl.exbloattv.data.LoadedTv
+import dev.mntl.exbloattv.data.TvSession
 import dev.mntl.exbloattv.tv.AnimationScales
 import dev.mntl.exbloattv.tv.Fixtures
 import dev.mntl.exbloattv.tv.InstalledPackage
@@ -37,5 +38,5 @@ object MiBoxFixture {
     }
 
     fun loaded(inv: Inventory = inventory()) =
-        LoadedTv(host = "192.168.10.3", name = "Mi Box 4", inventory = inv, apps = categorizer.categorize(inv), removedForUser = emptySet())
+        LoadedTv(host = "192.168.10.3", name = "Mi Box 4", inventory = inv, apps = TvSession.appsOf(inv, categorizer), removedForUser = inv.removedForUser)
 }

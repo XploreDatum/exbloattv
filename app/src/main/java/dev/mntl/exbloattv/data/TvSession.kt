@@ -7,14 +7,11 @@ import dev.mntl.exbloattv.apps.AppLabelResolver
 import dev.mntl.exbloattv.catalog.Catalog
 import dev.mntl.exbloattv.catalog.CategorizedApp
 import dev.mntl.exbloattv.catalog.Categorizer
-import dev.mntl.exbloattv.state.ChangeKind
-import dev.mntl.exbloattv.state.TvStateReadException
-import dev.mntl.exbloattv.state.TvStateStore
+import dev.mntl.exbloattv.tv.InstalledPackage
 import dev.mntl.exbloattv.tv.Inventory
 import dev.mntl.exbloattv.tv.TvInfo
 import dev.mntl.exbloattv.tv.TvInspector
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.coroutines.cancellation.CancellationException
 
 /** Everything the Keep screen needs about one TV, read when the person connected ("before" numbers included). */
 data class LoadedTv(
@@ -22,7 +19,7 @@ data class LoadedTv(
     val name: String,
     val inventory: Inventory,
     val apps: List<CategorizedApp>,
-    /** Apps an earlier run removed for the TV's user (the planner brings them back with install-existing). */
+    /** Apps removed for the TV's user (the planner brings kept ones back with install-existing). */
     val removedForUser: Set<String>,
 ) {
     val serial: String get() = inventory.info.serial
@@ -55,10 +52,9 @@ class TvSession(
     suspend fun load(host: String, client: AdbClient): LoadedTv {
         val inv = TvInspector(client).read()
         val serial = inv.info.serial
-        val removed = removedForUser(client, serial)
         val name = repo.tv(serial)?.name ?: hostNames[host] ?: friendlyName(inv.info)
         repo.remember(serial, name, host)
-        val tv = LoadedTv(host, name, inv, categorizer.categorize(inv), removed)
+        val tv = LoadedTv(host, name, inv, appsOf(inv, categorizer), inv.removedForUser)
         loaded[serial] = tv
         clients.put(serial, client)?.takeIf { it !== client }?.let { runCatching { it.close() } }
         return tv
@@ -102,26 +98,16 @@ class TvSession(
             ?: catalog.match(pkg)?.name
             ?: AppLabelResolver.prettify(pkg)
 
-    private suspend fun removedForUser(client: AdbClient, serial: String): Set<String> =
-        try {
-            val removed = linkedSetOf<String>()
-            for (c in TvStateStore(client).load(serial).changes) {
-                val pkg = c.pkg ?: continue
-                when (c.kind) {
-                    ChangeKind.REMOVE_FOR_USER -> if (c.verified) removed += pkg
-                    ChangeKind.INSTALL_EXISTING -> if (c.verified) removed -= pkg
-                    else -> Unit
-                }
-            }
-            removed
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: TvStateReadException) {
-            // The runner reads the state file again before changing anything and stops if it can't.
-            emptySet()
+    companion object {
+        /**
+         * The Keep list: the TV's apps plus those removed for its user, shown as switched off so they can be brought
+         * back (spec §12a.3). Removal for the user is only ever done to system apps (user apps are switched off).
+         */
+        fun appsOf(inv: Inventory, categorizer: Categorizer): List<CategorizedApp> {
+            val removed = inv.removedForUser.map { InstalledPackage(it, "", null, -1, isSystem = true, enabled = false) }
+            return categorizer.categorize(if (removed.isEmpty()) inv else inv.copy(packages = inv.packages + removed))
         }
 
-    companion object {
         /** "Xiaomi" + "MIBOX4" -> "Xiaomi MIBOX4"; a model that already names the brand is used alone. */
         fun friendlyName(info: TvInfo): String {
             val model = info.model.trim()

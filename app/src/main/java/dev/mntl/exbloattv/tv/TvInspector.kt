@@ -31,6 +31,9 @@ class TvInspector(private val adb: AdbClient) {
         val packages = rows.map { (name, path, inst) ->
             InstalledPackage(name, path, inst.first, inst.second, name in system, name !in disabled)
         }
+        // `-u` also lists apps removed for the TV's user; they can be brought back with install-existing.
+        val removedForUser = Parsers.packageNames(run("removed app list", "pm list packages -u", pmOutput = true)) -
+            packages.map { it.name }.toSet()
         val launchable = (Parsers.queryActivitiesPackages(run("launchable apps", query("LEANBACK_LAUNCHER"))) +
             Parsers.queryActivitiesPackages(run("launchable apps", query("LAUNCHER")))).toSet()
         if (launchable.isEmpty()) throw TvReadException("launchable apps", "none found")
@@ -61,7 +64,7 @@ class TvInspector(private val adb: AdbClient) {
             androidRelease = props["ro.build.version.release"].orEmpty(),
             sdkInt = props["ro.build.version.sdk"]?.toIntOrNull() ?: 0,
         )
-        return Inventory(info, packages, launchable, homePackages, resolvedHome, memory, storage, animations, backgroundOps)
+        return Inventory(info, packages, launchable, homePackages, resolvedHome, memory, storage, animations, backgroundOps, removedForUser)
     }
 
     /** Memory and storage are informational: an unreadable one becomes null. Cancellation and connection errors still propagate. */
