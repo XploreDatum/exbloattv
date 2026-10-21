@@ -9,6 +9,7 @@ import dev.mntl.exbloattv.cleanup.RunProgress
 import dev.mntl.exbloattv.cleanup.Step
 import dev.mntl.exbloattv.cleanup.StepStatus
 import dev.mntl.exbloattv.cleanup.Undo
+import dev.mntl.exbloattv.cleanup.UndoInterruptedException
 import dev.mntl.exbloattv.state.Change
 import dev.mntl.exbloattv.state.TvLockedException
 import dev.mntl.exbloattv.state.TvStateStore
@@ -39,12 +40,10 @@ data class CleanupRequest(
 data class UndoRequest(val serial: String, val host: String, val tvName: String)
 
 /**
- * The runner stops for good when the TV's lock or change log changed under it (another phone worked on the TV). Its
- * step message starts with this text; the Cleaning screen then offers "Check the TV again".
+ * The runner stops for good when the TV's lock or change log changed under it (another phone worked on the TV); the
+ * Cleaning screen then offers "Check the TV again".
  */
-internal const val CHANGED_ELSEWHERE_PREFIX = "This TV was changed from another phone"
-
-fun isChangedElsewhere(message: String?): Boolean = message?.startsWith(CHANGED_ELSEWHERE_PREFIX) == true
+fun isChangedElsewhere(message: String?): Boolean = message == CleanupRunner.CHANGED_ELSEWHERE_MESSAGE
 
 enum class UndoProblem { LOCKED, NOT_ALLOWED, UNREACHABLE, UNEXPECTED }
 
@@ -258,6 +257,9 @@ class CleanupWork(
         } catch (e: CancellationException) {
             withContext(NonCancellable) { _state.value = WorkState.UndoFailed(req.serial, req.tvName, UndoProblem.UNEXPECTED) }
             throw e
+        } catch (e: UndoInterruptedException) {
+            // Stopped partway (connection or lock lost): show what was put back, with Retry.
+            _state.value = WorkState.Undone(req.serial, req.tvName, e.partial.toOutcome(interrupted = true))
         } catch (e: TvLockedException) {
             _state.value = WorkState.UndoFailed(req.serial, req.tvName, UndoProblem.LOCKED, e.byPhone)
         } catch (e: AdbError.Unauthorized) {

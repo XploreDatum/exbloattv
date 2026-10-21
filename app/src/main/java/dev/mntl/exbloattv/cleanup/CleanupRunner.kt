@@ -442,7 +442,7 @@ class CleanupRunner(
                     foreignIds(s) != foreignAtStart ||
                     !s.changes.map { it.id }.containsAll(confirmedIds)
             }
-            return if (stale) Outcome.Failed(CHANGED_ELSEWHERE, block = true) else null
+            return if (stale) Outcome.Failed(CHANGED_ELSEWHERE_MESSAGE, block = true) else null
         }
 
         private fun foreignIds(s: TvState) = s.changes.filter { it.byPhone != phone }.map { it.id }.toSet()
@@ -786,7 +786,8 @@ class CleanupRunner(
 
     private fun lockedBy(name: String) = "Another phone ($name) is cleaning this TV"
 
-    private companion object {
+    // internal (not private): the Cleaning screen recognises CHANGED_ELSEWHERE_MESSAGE.
+    internal companion object {
         val BACKOFF_MS = listOf(2_000L, 5_000L, 10_000L)
         const val SHELL_TIMEOUT_MS = 60_000L
         const val INSTALL_TIMEOUT_MS = 5 * 60_000L
@@ -805,7 +806,7 @@ class CleanupRunner(
         val NOT_A_REAL_HOME = setOf("android", "com.android.tv.settings", "com.google.android.tungsten.setupwraith")
         const val BOOT_ID = "cat /proc/sys/kernel/random/boot_id"
         const val NO_RESTART = "The TV didn't restart. Tap Retry."
-        const val CHANGED_ELSEWHERE =
+        const val CHANGED_ELSEWHERE_MESSAGE =
             "This TV was changed from another phone while you were away. Check the TV again before carrying on"
         const val LOST = "Lost connection to the TV. Check it's on and on the same Wi-Fi, then tap Retry"
         const val SWAP_UNKNOWN = "Couldn't check the TV's home screen. Check the TV is on, then tap Retry"

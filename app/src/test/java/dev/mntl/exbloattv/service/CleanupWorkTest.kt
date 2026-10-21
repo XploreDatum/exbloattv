@@ -4,6 +4,10 @@ import dev.mntl.exbloattv.adb.AdbClient
 import dev.mntl.exbloattv.adb.AdbConnector
 import dev.mntl.exbloattv.adb.AdbError
 import dev.mntl.exbloattv.cleanup.ApkDownloader
+import dev.mntl.exbloattv.cleanup.CleanupRunner
+import dev.mntl.exbloattv.cleanup.UndoFailure
+import dev.mntl.exbloattv.cleanup.UndoReport
+import dev.mntl.exbloattv.state.ChangeKind
 import dev.mntl.exbloattv.cleanup.LauncherSwap
 import dev.mntl.exbloattv.cleanup.Step
 import dev.mntl.exbloattv.cleanup.StepStatus
@@ -88,8 +92,21 @@ class CleanupWorkTest {
     }
 
     @Test fun changedElsewhereIsRecognised() {
-        assertTrue(isChangedElsewhere("This TV was changed from another phone while you were away. Check it again."))
+        assertTrue(isChangedElsewhere(CleanupRunner.CHANGED_ELSEWHERE_MESSAGE))
         assertFalse(isChangedElsewhere("Couldn't switch this app off"))
         assertFalse(isChangedElsewhere(null))
+    }
+
+    @Test fun undoReportKeepsPackagesAndKinds() {
+        val report = UndoReport(
+            restored = 3,
+            failed = listOf(UndoFailure("com.netflix.ninja", ChangeKind.DISABLE), UndoFailure(null, ChangeKind.LAUNCHER_SWAP)),
+            reinstallFromStore = listOf("com.example.game"),
+        )
+        val o = report.toOutcome(interrupted = true)
+        assertEquals(3, o.restored)
+        assertEquals(listOf(UndoFailureInfo("com.netflix.ninja", ChangeKind.DISABLE), UndoFailureInfo(null, ChangeKind.LAUNCHER_SWAP)), o.failed)
+        assertEquals(listOf("com.example.game"), o.reinstallFromStore)
+        assertTrue(o.interrupted)
     }
 }

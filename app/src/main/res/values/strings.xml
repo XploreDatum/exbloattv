@@ -309,6 +309,7 @@
     <string name="tv_store_opened">The Play Store is open on the TV. Press Install with the remote.</string>
     <string name="tv_store_failed">Couldn\'t open the Play Store on the TV. Make sure it\'s on, then try again.</string>
     <string name="home_screen_name">Home screen</string>
+    <string name="undo_failed_animations">Animation speed</string>
     <string name="undo_problem_locked">Another phone (%1$s) is changing this TV right now. Try again when it\'s done.</string>
     <string name="undo_problem_not_allowed">The TV didn\'t allow this phone. Press OK on “Allow USB debugging?” on the TV, then try again.</string>
     <string name="undo_problem_unreachable">Can\'t reach the TV. Make sure it\'s on and on the same Wi-Fi.</string>

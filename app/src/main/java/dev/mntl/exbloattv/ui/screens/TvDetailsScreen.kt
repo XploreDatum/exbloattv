@@ -259,10 +259,9 @@ private fun UndoSection(mine: WorkState?, nameOf: (String) -> String, onRetry: (
 
 @Composable
 private fun failureLabel(f: UndoFailureInfo, nameOf: (String) -> String): String = when {
-    f.label != null -> f.label
-    f.pkg == null && f.kind == ChangeKind.LAUNCHER_SWAP -> stringResource(R.string.home_screen_name)
     f.pkg != null -> nameOf(f.pkg)
-    else -> stringResource(R.string.home_screen_name)
+    f.kind == ChangeKind.LAUNCHER_SWAP -> stringResource(R.string.home_screen_name)
+    else -> stringResource(R.string.undo_failed_animations)
 }
 
 @Composable
