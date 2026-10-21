@@ -163,6 +163,12 @@
     <string name="keep_other_hint">Apps you installed that this app doesn\'t know yet.</string>
     <string name="keep_locked">Always kept</string>
     <string name="keep_always_off">Always switched off (%1$d)</string>
+    <string name="keep_ads_choose">Your choice (%1$d)</string>
+    <string name="keep_ads_choose_body">You unlocked these under Advanced. They start switched off.</string>
+    <string name="keep_advanced">Advanced</string>
+    <string name="keep_hide_advanced">Hide advanced</string>
+    <string name="keep_unlock_ads">Let me choose ads &amp; tracking apps</string>
+    <string name="keep_unlock_ads_desc">Not recommended: these show ads or track what you watch.</string>
     <string name="keep_always_off_body">These show ads or track what you watch, so they\'re always switched off.</string>
     <string name="keep_expanded">expanded</string>
     <string name="keep_collapsed">collapsed</string>

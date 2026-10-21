@@ -66,6 +66,8 @@ sealed interface KeepUiState {
         val review: ReviewCounts,
         /** Fire TV keeps its own home screen in this version. */
         val homeScreenSwapAvailable: Boolean,
+        /** Advanced: the person chose to decide about ads & tracking apps themselves (they still start off). */
+        val adsUnlocked: Boolean = false,
     ) : KeepUiState
 }
 
@@ -111,9 +113,21 @@ class KeepViewModel(
     }
 
     fun setKeep(pkg: String, keep: Boolean) = edit { r ->
-        val app = r.tv.apps.firstOrNull { it.pkg.name == pkg } ?: return@edit null
-        if (!isSwitch(app)) return@edit null
+        val app = effectiveApps(r.tv, r.adsUnlocked).firstOrNull { it.pkg.name == pkg } ?: return@edit null
+        if (!isSwitch(app, r.adsUnlocked)) return@edit null
         r.choices.copy(keep = r.choices.keep + (pkg to keep))
+    }
+
+    /**
+     * Advanced (spec §6: ads & tracking are "unlockable only in Advanced"): makes those rows switches. They stay off
+     * until switched on; locking them again puts them back to off.
+     */
+    fun setAdsUnlocked(on: Boolean) {
+        val r = _state.value as? KeepUiState.Ready ?: return
+        if (r.adsUnlocked == on) return
+        val ads = r.tv.apps.filter { it.category == Category.ADS_TRACKING }
+        val keep = if (on) r.choices.keep else r.choices.keep + ads.associate { it.pkg.name to it.defaultKeep }
+        _state.value = build(r.tv, r.choices.copy(keep = keep), on)
     }
 
     fun setSpeed(option: SpeedOption, on: Boolean) = edit { r ->
@@ -135,7 +149,7 @@ class KeepViewModel(
     private inline fun edit(change: (KeepUiState.Ready) -> Choices?) {
         val r = _state.value as? KeepUiState.Ready ?: return
         val next = change(r) ?: return
-        if (next != r.choices) _state.value = build(r.tv, next)
+        if (next != r.choices) _state.value = build(r.tv, next, r.adsUnlocked)
     }
 
     private fun resolveLabels(tv: LoadedTv) {
@@ -160,8 +174,13 @@ class KeepViewModel(
     companion object {
         private fun isVisible(app: CategorizedApp) = !SafetyGuard.isRemoteInput(app.pkg.name)
 
-        private fun isSwitch(app: CategorizedApp) =
-            isVisible(app) && !app.locked && app.category in KEEP_GROUP_ORDER
+        private fun isSwitch(app: CategorizedApp, adsUnlocked: Boolean = false) =
+            isVisible(app) && !app.locked && (app.category in KEEP_GROUP_ORDER || adsUnlocked && app.category == Category.ADS_TRACKING)
+
+        /** With ads unlocked their rows are plain (unlocked) apps, so the planner follows their switches. */
+        private fun effectiveApps(tv: LoadedTv, adsUnlocked: Boolean): List<CategorizedApp> =
+            if (!adsUnlocked) tv.apps
+            else tv.apps.map { if (it.category == Category.ADS_TRACKING && it.locked) it.copy(locked = false) else it }
 
         /**
          * Starts from the TV's state; previous choices fill in the switches where the TV agrees (an app that is off
@@ -184,14 +203,15 @@ class KeepViewModel(
             )
         }
 
-        fun build(tv: LoadedTv, choices: Choices): KeepUiState.Ready {
-            val visible = tv.apps.filter { isVisible(it) }
+        fun build(tv: LoadedTv, choices: Choices, adsUnlocked: Boolean = false): KeepUiState.Ready {
+            val apps = effectiveApps(tv, adsUnlocked)
+            val visible = apps.filter { isVisible(it) }
             fun row(app: CategorizedApp) = KeepRow(
                 pkg = app.pkg.name,
                 name = app.name,
                 description = app.description,
                 keep = if (app.locked) app.defaultKeep else choices.keep[app.pkg.name] ?: app.defaultKeep,
-                toggleable = isSwitch(app),
+                toggleable = isSwitch(app, adsUnlocked),
             )
             val groups = KEEP_GROUP_ORDER.mapNotNull { c ->
                 visible.filter { it.category == c }.takeIf { it.isNotEmpty() }?.let { KeepGroup(c, it.map(::row)) }
@@ -200,7 +220,7 @@ class KeepViewModel(
             val system = visible.filter { it.category == Category.SYSTEM || it.category == Category.LAUNCHER }
                 .sortedBy { it.name.lowercase() }
                 .map { SystemRow(it.pkg.name, it.name) }
-            val plan = CleanupPlanner.plan(tv.apps, tv.inventory, choices, tv.removedForUser)
+            val plan = CleanupPlanner.plan(apps, tv.inventory, choices, tv.removedForUser)
             val names = tv.apps.associate { it.pkg.name to it.name }
             val review = ReviewCounts(
                 switchOff = plan.count { it is Step.Disable },
@@ -220,6 +240,7 @@ class KeepViewModel(
                 plan = plan,
                 review = review,
                 homeScreenSwapAvailable = !tv.inventory.info.manufacturer.equals("Amazon", ignoreCase = true),
+                adsUnlocked = adsUnlocked,
             )
         }
     }

@@ -141,6 +141,29 @@ class KeepViewModelTest {
         assertEquals(1, v.ready().review.switchOn)
     }
 
+    @Test fun adsCanBeUnlockedUnderAdvancedAndStartOff() {
+        val ad = "tv.alphonso.alphonso_eula"
+        val v = vm()
+        assertTrue(Step.Disable(ad) in v.ready().plan)
+        v.setAdsUnlocked(true)
+        var r = v.ready()
+        assertTrue(r.adsUnlocked)
+        assertTrue(r.row(ad).toggleable)
+        assertFalse(r.row(ad).keep) // still off until switched on
+        assertTrue(Step.Disable(ad) in r.plan)
+        v.setKeep(ad, true)
+        r = v.ready()
+        assertTrue(r.row(ad).keep)
+        assertTrue(r.plan.none { it == Step.Disable(ad) })
+        assertEquals(CleanupPlanner.plan(r.tv.apps.map { if (it.pkg.name == ad) it.copy(locked = false) else it }, r.tv.inventory, r.choices, r.tv.removedForUser).count { it is Step.Disable }, r.review.switchOff)
+        // Locking again puts them back to always off.
+        v.setAdsUnlocked(false)
+        r = v.ready()
+        assertFalse(r.row(ad).toggleable)
+        assertFalse(r.row(ad).keep)
+        assertTrue(Step.Disable(ad) in r.plan)
+    }
+
     @Test fun loadFailureCanBeRetried() {
         var calls = 0
         val v = KeepViewModel(load = { if (calls++ == 0) error("no tv") else MiBoxFixture.loaded() }, savedChoices = { null })

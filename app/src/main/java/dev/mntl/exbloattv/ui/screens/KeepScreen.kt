@@ -102,9 +102,10 @@ fun KeepScreen(vm: KeepViewModel, onBack: () -> Unit, onFindAgain: () -> Unit, o
                         },
                     )
                 }
-                if (s.alwaysOff.isNotEmpty()) AlwaysOff(s.alwaysOff)
+                if (s.alwaysOff.isNotEmpty()) AdsAndTracking(s.alwaysOff, s.adsUnlocked, onToggle = vm::setKeep)
                 SpeedSwitches(s, vm)
                 SystemApps(s.system)
+                if (s.alwaysOff.isNotEmpty()) Advanced(s.adsUnlocked, vm::setAdsUnlocked)
                 VSpace(12)
             }
             if (review) {
@@ -127,11 +128,13 @@ fun KeepScreen(vm: KeepViewModel, onBack: () -> Unit, onFindAgain: () -> Unit, o
     }
 }
 
+/** Ads & tracking: collapsed "Always switched off (N)", or switches once unlocked under Advanced. */
 @Composable
-private fun AlwaysOff(rows: List<KeepRow>) {
+private fun AdsAndTracking(rows: List<KeepRow>, unlocked: Boolean, onToggle: (String, Boolean) -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
     SectionLabel(stringResource(R.string.cat_ads))
-    val title = stringResource(R.string.keep_always_off, rows.size)
+    val title = stringResource(if (unlocked) R.string.keep_ads_choose else R.string.keep_always_off, rows.size)
+    val body = stringResource(if (unlocked) R.string.keep_ads_choose_body else R.string.keep_always_off_body)
     val stateText = stringResource(if (open) R.string.keep_expanded else R.string.keep_collapsed)
     val items = buildList<@Composable () -> Unit> {
         add {
@@ -146,16 +149,29 @@ private fun AlwaysOff(rows: List<KeepRow>) {
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.bodyLarge)
-                    Text(stringResource(R.string.keep_always_off_body), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Icon(if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null)
             }
         }
-        if (open) rows.forEach { row ->
-            add { AppRow(row.name, row.description.ifBlank { null }, null, checked = false, enabled = false, onCheckedChange = {}) }
+        if (open || unlocked) rows.forEach { row ->
+            add {
+                AppRow(row.name, row.description.ifBlank { null }, null, checked = row.keep, enabled = row.toggleable, onCheckedChange = { onToggle(row.pkg, it) })
+            }
         }
     }
     SegmentedGroup(items)
+}
+
+@Composable
+private fun Advanced(adsUnlocked: Boolean, onUnlock: (Boolean) -> Unit) {
+    var open by rememberSaveable { mutableStateOf(adsUnlocked) }
+    QuietButton(stringResource(if (open) R.string.keep_hide_advanced else R.string.keep_advanced), onClick = { open = !open })
+    if (open) {
+        SegmentedGroup(
+            listOf { SettingRow(stringResource(R.string.keep_unlock_ads), stringResource(R.string.keep_unlock_ads_desc), adsUnlocked, onCheckedChange = onUnlock) },
+        )
+    }
 }
 
 @Composable
