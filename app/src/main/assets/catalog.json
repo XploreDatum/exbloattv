@@ -1,0 +1,1040 @@
+{
+ "_notice": "Catalog seeded from android-tv-tune (MIT). See catalog-NOTICE.txt.",
+ "entries": [
+  {
+   "pattern": "com.netflix.ninja",
+   "category": "STREAMING",
+   "name": "Netflix",
+   "description": "Watch movies and shows on Netflix",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.amazon.amazonvideo.livingroom",
+   "category": "STREAMING",
+   "name": "Prime Video",
+   "description": "Watch movies and shows on Prime Video",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.youtube.tv",
+   "category": "STREAMING",
+   "name": "YouTube",
+   "description": "Watch YouTube videos on the TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.youtube.tvunplugged",
+   "category": "STREAMING",
+   "name": "YouTube TV",
+   "description": "Live TV from YouTube TV (US only)",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "in.startv.hotstar",
+   "category": "STREAMING",
+   "name": "JioHotstar",
+   "description": "Watch shows, movies and live sport on JioHotstar",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.sonyliv",
+   "category": "STREAMING",
+   "name": "Sony LIV",
+   "description": "Watch shows and live sport on Sony LIV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.graymatrix.did",
+   "category": "STREAMING",
+   "name": "ZEE5",
+   "description": "Watch shows and movies on ZEE5",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.apple.atve.androidtv.appletv",
+   "category": "STREAMING",
+   "name": "Apple TV",
+   "description": "Watch Apple TV+ shows and movies",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.plexapp.android",
+   "category": "STREAMING",
+   "name": "Plex",
+   "description": "Stream your own media library and free channels",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "org.videolan.vlc",
+   "category": "STREAMING",
+   "name": "VLC",
+   "description": "Play video and music files from your network or drives",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "org.xbmc.kodi",
+   "category": "STREAMING",
+   "name": "Kodi",
+   "description": "Media centre for your own video and music",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.mxtech.videoplayer.pro",
+   "category": "STREAMING",
+   "name": "MX Player Pro",
+   "description": "Play video files without ads",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.mxtech.videoplayer.ad",
+   "category": "STREAMING",
+   "name": "MX Player",
+   "description": "Play video files and stream shows",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.mxtech.videoplayer.television",
+   "category": "STREAMING",
+   "name": "MX Player for TV",
+   "description": "Play video files on the TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.oumi.utility.media.hub",
+   "category": "STREAMING",
+   "name": "VidHub",
+   "description": "Play videos from your cloud drives and servers",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.jio.media.stb.ondemand",
+   "category": "STREAMING",
+   "name": "JioCinema",
+   "description": "Watch movies and shows on JioCinema",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "io.put.putio",
+   "category": "STREAMING",
+   "name": "put.io",
+   "description": "Stream files from your put.io account",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.stevenschoen.putionew",
+   "category": "STREAMING",
+   "name": "put.io (older app)",
+   "description": "Stream files from your put.io account",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "tv.twitch.android.app",
+   "category": "STREAMING",
+   "name": "Twitch",
+   "description": "Watch live game streams on Twitch",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.disney.disneyplus",
+   "category": "STREAMING",
+   "name": "Disney+",
+   "description": "Watch Disney+ shows and movies",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.hulu.livingroomplus",
+   "category": "STREAMING",
+   "name": "Hulu",
+   "description": "Watch shows and live TV on Hulu (US only)",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.wbd.stream",
+   "category": "STREAMING",
+   "name": "HBO Max",
+   "description": "Watch HBO Max shows and movies",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.dazn",
+   "category": "STREAMING",
+   "name": "DAZN",
+   "description": "Watch live sport on DAZN",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.tubitv",
+   "category": "STREAMING",
+   "name": "Tubi",
+   "description": "Watch free movies and shows on Tubi",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "tv.wuaki.apptv",
+   "category": "STREAMING",
+   "name": "Rakuten TV",
+   "description": "Watch movies and shows on Rakuten TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "rtve.tablet.android",
+   "category": "STREAMING",
+   "name": "RTVE",
+   "description": "Watch Spanish public TV and shows",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.nvidia.geforcenow",
+   "category": "STREAMING",
+   "name": "GeForce NOW",
+   "description": "Play PC games streamed from the cloud",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.jio.jioplay.tv",
+   "category": "STREAMING",
+   "name": "JioTV",
+   "description": "Watch live TV channels on JioTV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.suntv.sunnxt",
+   "category": "STREAMING",
+   "name": "Sun NXT",
+   "description": "Watch South Indian movies and shows on Sun NXT",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "ahaflix.tv",
+   "category": "STREAMING",
+   "name": "aha",
+   "description": "Watch Telugu and Tamil movies and shows on aha",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.tv.vootkids.androidtv",
+   "category": "STREAMING",
+   "name": "Voot Kids",
+   "description": "Watch kids shows on Voot Kids",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.tv.voot.androidtv",
+   "category": "STREAMING",
+   "name": "Voot",
+   "description": "Watch shows on Voot",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.erosnow",
+   "category": "STREAMING",
+   "name": "Eros Now",
+   "description": "Watch Indian movies on Eros Now",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.crunchyroll.crunchyroid",
+   "category": "STREAMING",
+   "name": "Crunchyroll",
+   "description": "Watch anime on Crunchyroll",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "tv.pluto.android",
+   "category": "STREAMING",
+   "name": "Pluto TV",
+   "description": "Watch free live channels on Pluto TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.stremio.one",
+   "category": "STREAMING",
+   "name": "Stremio",
+   "description": "Browse and stream shows and movies with add-ons",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.liskovsoft.smarttubetv",
+   "category": "STREAMING",
+   "name": "SmartTube",
+   "description": "Watch YouTube videos without ads",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.liskovsoft.smarttubetv.beta",
+   "category": "STREAMING",
+   "name": "SmartTube (beta)",
+   "description": "Watch YouTube videos without ads",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.mubi.tv",
+   "category": "STREAMING",
+   "name": "MUBI",
+   "description": "Watch hand-picked films on MUBI",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.lionsgate.lionsgateplay",
+   "category": "STREAMING",
+   "name": "Lionsgate Play",
+   "description": "Watch movies and shows on Lionsgate Play",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.discovery.discoveryplus.androidtv",
+   "category": "STREAMING",
+   "name": "discovery+",
+   "description": "Watch documentaries and reality shows on discovery+",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.cbs.ott",
+   "category": "STREAMING",
+   "name": "Paramount+",
+   "description": "Watch Paramount+ shows and movies",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.peacocktv.peacockandroid",
+   "category": "STREAMING",
+   "name": "Peacock",
+   "description": "Watch Peacock shows and movies",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.vimeo.android.videoapp",
+   "category": "STREAMING",
+   "name": "Vimeo",
+   "description": "Watch videos on Vimeo",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.spotify.tv.android",
+   "category": "MUSIC",
+   "name": "Spotify",
+   "description": "Listen to music and podcasts on Spotify",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.google.android.youtube.tvmusic",
+   "category": "MUSIC",
+   "name": "YouTube Music",
+   "description": "Listen to music on YouTube Music",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.google.android.music",
+   "category": "MUSIC",
+   "name": "Play Music",
+   "description": "Old Google music app that is no longer updated",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.jio.media.jiobeats",
+   "category": "MUSIC",
+   "name": "JioSaavn",
+   "description": "Listen to music on JioSaavn",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.gaana",
+   "category": "MUSIC",
+   "name": "Gaana",
+   "description": "Listen to music on Gaana",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.amazon.mp3",
+   "category": "MUSIC",
+   "name": "Amazon Music",
+   "description": "Listen to music on Amazon Music",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.aspiro.tidal",
+   "category": "MUSIC",
+   "name": "TIDAL",
+   "description": "Listen to music on TIDAL",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "deezer.android.tv",
+   "category": "MUSIC",
+   "name": "Deezer",
+   "description": "Listen to music on Deezer",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.apple.android.music",
+   "category": "MUSIC",
+   "name": "Apple Music",
+   "description": "Listen to music on Apple Music",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.pandora.android.atv",
+   "category": "MUSIC",
+   "name": "Pandora",
+   "description": "Listen to music on Pandora",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.audible.application",
+   "category": "MUSIC",
+   "name": "Audible",
+   "description": "Listen to audiobooks",
+   "defaultKeep": true,
+   "musicApp": true
+  },
+  {
+   "pattern": "com.google.android.tv",
+   "category": "LIVE_TV",
+   "name": "Live Channels",
+   "description": "Watch antenna, cable and set-top box channels",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "tv.airtel.xstream.tvapp",
+   "category": "LIVE_TV",
+   "name": "Airtel Xstream Play",
+   "description": "Watch live TV and shows on Airtel Xstream",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.mitv.tvhome.mitvplus",
+   "category": "LIVE_TV",
+   "name": "Xiaomi TV+",
+   "description": "Free live channels from Xiaomi",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.tcl.tv",
+   "category": "LIVE_TV",
+   "name": "TCL TV",
+   "description": "Watch antenna or cable channels on a TCL TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.katniss",
+   "category": "FEATURES",
+   "name": "Voice search",
+   "description": "Mic button on the remote stops working",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.katniss.tv",
+   "category": "FEATURES",
+   "name": "Voice search (TV)",
+   "description": "Mic button on the remote stops working",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.speech.pumpkin",
+   "category": "FEATURES",
+   "name": "Voice recognition",
+   "description": "Voice typing and voice search stop working",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.apps.mediashell",
+   "category": "FEATURES",
+   "name": "Casting",
+   "description": "You can't cast from your phone to the TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.backdrop",
+   "category": "FEATURES",
+   "name": "Screensaver",
+   "description": "The TV shows a plain screen instead of photos when idle",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.apps.tv.dreamx",
+   "category": "FEATURES",
+   "name": "Ambient screensaver",
+   "description": "The TV shows a plain screen instead of ambient art when idle",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.marvin.talkback",
+   "category": "FEATURES",
+   "name": "TalkBack",
+   "description": "The screen reader that speaks menus aloud stops working",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.tts",
+   "category": "FEATURES",
+   "name": "Text-to-speech",
+   "description": "The TV can't read text aloud",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.videos",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Google Play Movies",
+   "description": "Buy or rent movies from Google; usually not needed",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.play.games",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Play Games",
+   "description": "Google's games app; usually not needed",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.feedback",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Google feedback",
+   "description": "Sends feedback reports to Google",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.tv.bugreportsender",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Bug report sender",
+   "description": "Sends problem reports to Google",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.partnersetup",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Partner setup",
+   "description": "Sets up promoted apps from the TV maker",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.syncadapters.calendar",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Calendar sync",
+   "description": "Calendar no longer syncs with your Google account",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.syncadapters.contacts",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Contacts sync",
+   "description": "Contacts no longer sync with your Google account",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.android.printspooler",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Printing",
+   "description": "You can't print from the TV",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.android.camera2",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Camera",
+   "description": "A USB camera can't be used on the TV",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.tvrecommendations",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Recommendations",
+   "description": "The home screen shows fewer suggested shows",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.onetimeinitializer",
+   "category": "GOOGLE_EXTRAS",
+   "name": "First-time setup helper",
+   "description": "Only used once when the TV is first set up",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.android.onetimeinitializer",
+   "category": "GOOGLE_EXTRAS",
+   "name": "First-time setup helper",
+   "description": "Only used once when the TV is first set up",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "android.autoinstalls.config.google.gtvpai",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Auto-install apps",
+   "description": "Stops the TV installing promoted apps by itself",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.tv.frameworkpackagestubs",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Install stubs",
+   "description": "Placeholders for apps the TV may offer to install",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.google.android.sss.authbridge",
+   "category": "GOOGLE_EXTRAS",
+   "name": "Sign-in bridge",
+   "description": "Helper for some Google sign-in screens",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.android.htmlviewer",
+   "category": "GOOGLE_EXTRAS",
+   "name": "HTML viewer",
+   "description": "Can't open saved web pages directly",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.mitv.tvhome.atv",
+   "category": "MANUFACTURER",
+   "name": "Xiaomi home (PatchWall)",
+   "description": "Xiaomi's own home screen and suggestions",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.mitv.tvhome.michannel",
+   "category": "MANUFACTURER",
+   "name": "Mi Channel",
+   "description": "Xiaomi's free channel and suggestion service",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.xm.webcontent",
+   "category": "MANUFACTURER",
+   "name": "Xiaomi web content",
+   "description": "Xiaomi web pages and promotions",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.mitv.milinkservice",
+   "category": "MANUFACTURER",
+   "name": "Mi Link",
+   "description": "Casting and linking with Xiaomi phones stops working",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.mitv.download.service",
+   "category": "MANUFACTURER",
+   "name": "Xiaomi downloads",
+   "description": "Xiaomi's background download helper",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.mitv.videoplayer",
+   "category": "MANUFACTURER",
+   "name": "Xiaomi video player",
+   "description": "Xiaomi's built-in video player",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.xiaomi.android.tvsetup.partnercustomizer",
+   "category": "MANUFACTURER",
+   "name": "Xiaomi setup customiser",
+   "description": "Xiaomi's first-time setup extras",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.xiaomi.mitv.updateservice",
+   "category": "MANUFACTURER",
+   "name": "Xiaomi updater",
+   "description": "The TV stops checking for Xiaomi updates",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "android.autoinstalls.config.xioami.mibox3",
+   "category": "MANUFACTURER",
+   "name": "Xiaomi auto-installer",
+   "description": "Stops Xiaomi installing promoted apps",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.waterfall.overseas",
+   "category": "MANUFACTURER",
+   "name": "TCL ad engine",
+   "description": "Sponsored content on the TCL home screen",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.dashboard",
+   "category": "MANUFACTURER",
+   "name": "TCL dashboard",
+   "description": "TCL's information panel",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.exhibit",
+   "category": "MANUFACTURER",
+   "name": "TCL demo mode",
+   "description": "Shop demo mode",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.factory.view",
+   "category": "MANUFACTURER",
+   "name": "TCL factory menu",
+   "description": "Factory test menu",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.esticker",
+   "category": "MANUFACTURER",
+   "name": "TCL store stickers",
+   "description": "Shop demo stickers",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.ocean.instructions",
+   "category": "MANUFACTURER",
+   "name": "TCL instructions",
+   "description": "On-screen TV manual",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.repairguide",
+   "category": "MANUFACTURER",
+   "name": "TCL repair guide",
+   "description": "TCL's repair help pages",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.useragreement",
+   "category": "MANUFACTURER",
+   "name": "TCL user agreement",
+   "description": "TCL's terms screens",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.usercenter",
+   "category": "MANUFACTURER",
+   "name": "TCL account",
+   "description": "TCL account sign-in stops working",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.guard",
+   "category": "MANUFACTURER",
+   "name": "TCL guard",
+   "description": "TCL's background protection service",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.messagebox",
+   "category": "MANUFACTURER",
+   "name": "TCL messages",
+   "description": "TCL push notifications and promotions",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.channelplus",
+   "category": "MANUFACTURER",
+   "name": "TCL Channel+",
+   "description": "TCL's free channel storefront",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.t_solo",
+   "category": "MANUFACTURER",
+   "name": "TCL Solo",
+   "description": "TCL's extra feature app",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.interactive",
+   "category": "MANUFACTURER",
+   "name": "TCL interactive",
+   "description": "TCL's interactive extras",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.gamebar",
+   "category": "MANUFACTURER",
+   "name": "TCL game bar",
+   "description": "TCL's game overlay",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.hearaid",
+   "category": "MANUFACTURER",
+   "name": "TCL hearing aid",
+   "description": "TCL's hearing assist feature",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.smartalexa",
+   "category": "MANUFACTURER",
+   "name": "TCL Alexa",
+   "description": "The built-in Alexa assistant stops working",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.magiconnectfree",
+   "category": "MANUFACTURER",
+   "name": "TCL MagiConnect",
+   "description": "Linking the TV with TCL phone apps stops working",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.suspension",
+   "category": "MANUFACTURER",
+   "name": "TCL floating menu",
+   "description": "TCL's floating shortcut menu",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.partnercustomizer",
+   "category": "MANUFACTURER",
+   "name": "TCL setup customiser",
+   "description": "TCL's first-time setup extras",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "com.tcl.ui_mediaCenter",
+   "category": "MANUFACTURER",
+   "name": "TCL media centre",
+   "description": "TCL's built-in media player",
+   "defaultKeep": false
+  },
+  {
+   "pattern": "tv.alphonso.alphonso_eula",
+   "category": "ADS_TRACKING",
+   "name": "Alphonso",
+   "description": "Tracks what you watch to target ads",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.alphonso.service",
+   "category": "ADS_TRACKING",
+   "name": "Alphonso service",
+   "description": "Listens to TV audio to target ads",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.miui.tv.analytics",
+   "category": "ADS_TRACKING",
+   "name": "Xiaomi analytics",
+   "description": "Sends usage data to Xiaomi",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "tv.samba.ssm.ui",
+   "category": "ADS_TRACKING",
+   "name": "Samba TV",
+   "description": "Tracks what is on screen to target ads",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.samba.tv",
+   "category": "ADS_TRACKING",
+   "name": "Samba TV service",
+   "description": "Tracks what is on screen to target ads",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.inscape.tv",
+   "category": "ADS_TRACKING",
+   "name": "Inscape",
+   "description": "Tracks what is on screen to target ads",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.enhance.gameservice",
+   "category": "ADS_TRACKING",
+   "name": "Game service tracker",
+   "description": "Background tracking service",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.android.mgstv",
+   "category": "ADS_TRACKING",
+   "name": "MGS TV",
+   "description": "Background tracking service",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.tcl.logkit",
+   "category": "ADS_TRACKING",
+   "name": "TCL log upload",
+   "description": "Sends usage logs to TCL",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.tcl.ttvs",
+   "category": "ADS_TRACKING",
+   "name": "TCL analytics",
+   "description": "Watches app installs and sends usage data",
+   "defaultKeep": false,
+   "locked": true
+  },
+  {
+   "pattern": "com.esaba.downloader",
+   "category": "SIDELOAD_TOOLS",
+   "name": "Downloader",
+   "description": "Download and install apps from the web",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.esaba.downloader.browserplugin",
+   "category": "SIDELOAD_TOOLS",
+   "name": "Downloader browser plugin",
+   "description": "Lets Downloader open web pages",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.lonelycatgames.Xplore",
+   "category": "SIDELOAD_TOOLS",
+   "name": "X-plore",
+   "description": "Browse and manage files on the TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "cm.aptoidetv.pt",
+   "category": "SIDELOAD_TOOLS",
+   "name": "Aptoide TV",
+   "description": "Alternative app store",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.apkmirror.helper.prod",
+   "category": "SIDELOAD_TOOLS",
+   "name": "APKMirror Installer",
+   "description": "Installs apps downloaded from APKMirror",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.alphainventor.filemanager",
+   "category": "SIDELOAD_TOOLS",
+   "name": "File Commander",
+   "description": "Browse and manage files on the TV",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "eu.chainfire.tv.sideloadlauncher",
+   "category": "SIDELOAD_TOOLS",
+   "name": "Sideload Launcher",
+   "description": "Shows sideloaded apps on the home screen",
+   "defaultKeep": true
+  },
+  {
+   "pattern": "com.google.android.tvlauncher",
+   "category": "LAUNCHER",
+   "name": "Android TV home",
+   "description": "The TV's standard home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.google.android.apps.tv.launcherx",
+   "category": "LAUNCHER",
+   "name": "Google TV home",
+   "description": "The TV's standard home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.google.android.leanbacklauncher",
+   "category": "LAUNCHER",
+   "name": "Android TV home (older)",
+   "description": "The TV's standard home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.google.android.tungsten.setupwraith",
+   "category": "LAUNCHER",
+   "name": "TV setup wizard",
+   "description": "Setup screens that can take over the home button",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "me.efesser.flauncher",
+   "category": "LAUNCHER",
+   "name": "FLauncher",
+   "description": "A simple, fast home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.spocky.projengmenu",
+   "category": "LAUNCHER",
+   "name": "Projectivy Launcher",
+   "description": "A custom home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.amazon.tv.launcher",
+   "category": "LAUNCHER",
+   "name": "Fire TV home",
+   "description": "Amazon's home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.nvidia.shieldtech.launcher",
+   "category": "LAUNCHER",
+   "name": "Shield home",
+   "description": "NVIDIA Shield's home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.sony.dtv.tvx",
+   "category": "LAUNCHER",
+   "name": "Sony TV home",
+   "description": "Sony's home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.sony.dtv.sonyselect",
+   "category": "LAUNCHER",
+   "name": "Sony Select home",
+   "description": "Sony's home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.tcl.launcher",
+   "category": "LAUNCHER",
+   "name": "TCL home",
+   "description": "TCL's home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.mitv.tvhome",
+   "category": "LAUNCHER",
+   "name": "Xiaomi TV home",
+   "description": "Xiaomi's home screen",
+   "defaultKeep": true,
+   "locked": true
+  },
+  {
+   "pattern": "com.google.android.tv.home",
+   "category": "LAUNCHER",
+   "name": "Google TV home",
+   "description": "The TV's standard home screen",
+   "defaultKeep": true,
+   "locked": true
+  }
+ ]
+}
