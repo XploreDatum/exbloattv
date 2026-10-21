@@ -19,9 +19,10 @@ fun mapAdbException(t: Throwable, duringHandshake: Boolean = false): AdbError {
     val chain = generateSequence(t) { it.cause?.takeIf { c -> c !== it } }.take(10).toList()
     return when {
         chain.any { it is AdbAuthException } -> AdbError.Unauthorized()
-        chain.any { it is ConnectException || it is NoRouteToHostException || it is AdbConnectException } -> AdbError.Refused()
+        chain.any { it is ConnectException || it is NoRouteToHostException } -> AdbError.Refused()
         chain.any { it is SocketTimeoutException || it is AdbTimeoutException } -> AdbError.Timeout()
         duringHandshake -> AdbError.Unauthorized()
+        chain.any { it is AdbConnectException } -> AdbError.Refused()
         else -> AdbError.Disconnected()
     }
 }

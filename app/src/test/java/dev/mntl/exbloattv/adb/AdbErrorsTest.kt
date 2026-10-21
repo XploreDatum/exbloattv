@@ -60,4 +60,19 @@ class AdbErrorsTest {
         val e = AdbError.Timeout()
         assertThat(mapAdbException(e)).isSameInstanceAs(e)
     }
+
+    @Test fun handshakeSocketCloseWrappedByDadbIsUnauthorized() {
+        val e = AdbConnectException("x", IOException("Connection closed"))
+        assertThat(mapAdbException(e, duringHandshake = true)).isInstanceOf(AdbError.Unauthorized::class.java)
+    }
+
+    @Test fun handshakeTimeoutWrappedByDadbIsTimeout() {
+        val e = AdbConnectException("x", SocketTimeoutException("t"))
+        assertThat(mapAdbException(e, duringHandshake = true)).isInstanceOf(AdbError.Timeout::class.java)
+    }
+
+    @Test fun handshakeRefusalWrappedByDadbIsRefused() {
+        val e = AdbConnectException("x", ConnectException("refused"))
+        assertThat(mapAdbException(e, duringHandshake = true)).isInstanceOf(AdbError.Refused::class.java)
+    }
 }

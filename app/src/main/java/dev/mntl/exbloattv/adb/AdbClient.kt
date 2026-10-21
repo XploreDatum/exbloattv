@@ -22,6 +22,10 @@ sealed class AdbError(msg: String) : Exception(msg) {
     class Refused : AdbError("debugging off")
     class Timeout : AdbError("timeout")
     class Disconnected : AdbError("connection lost")
+    /** The TV was reached but a push/pull/install transfer did not complete. */
+    class TransferFailed(detail: String) : AdbError("transfer failed: $detail")
+    /** A file on this phone is missing or unusable; the TV connection is fine. */
+    class LocalFile(detail: String) : AdbError("local file problem: $detail")
 }
 
 interface AdbConnector {
