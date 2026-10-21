@@ -14,6 +14,7 @@ import dev.mntl.exbloattv.data.ActiveJob
 import dev.mntl.exbloattv.state.Change
 import dev.mntl.exbloattv.state.TvLockedException
 import dev.mntl.exbloattv.state.TvStateStore
+import dev.mntl.exbloattv.state.TvStateTooNewException
 import dev.mntl.exbloattv.tv.Inventory
 import dev.mntl.exbloattv.tv.TvInspector
 import java.util.concurrent.atomic.AtomicReference
@@ -57,7 +58,8 @@ data class UndoRequest(val serial: String, val host: String, val tvName: String)
  */
 fun isChangedElsewhere(message: String?): Boolean = message == CleanupRunner.CHANGED_ELSEWHERE_MESSAGE
 
-enum class UndoProblem { LOCKED, NOT_ALLOWED, UNREACHABLE, UNEXPECTED }
+/** [TOO_NEW]: a newer version of the app set this TV up; this one must not touch its change log. */
+enum class UndoProblem { LOCKED, NOT_ALLOWED, UNREACHABLE, UNEXPECTED, TOO_NEW }
 
 /** What the TV work is doing right now. Exactly one cleanup or undo runs at a time. */
 sealed interface WorkState {
@@ -305,9 +307,15 @@ class CleanupWork(
         } catch (e: CancellationException) {
             withContext(NonCancellable) { _state.value = WorkState.UndoFailed(req.serial, req.tvName, UndoProblem.UNEXPECTED) }
             throw e
+        } catch (e: TvStateTooNewException) {
+            _state.value = WorkState.UndoFailed(req.serial, req.tvName, UndoProblem.TOO_NEW)
         } catch (e: UndoInterruptedException) {
             // Stopped partway (connection or lock lost): show what was put back, with Retry.
-            _state.value = WorkState.Undone(req.serial, req.tvName, e.partial.toOutcome(interrupted = true))
+            _state.value = if (e.cause is TvStateTooNewException && e.partial.restored == 0) {
+                WorkState.UndoFailed(req.serial, req.tvName, UndoProblem.TOO_NEW)
+            } else {
+                WorkState.Undone(req.serial, req.tvName, e.partial.toOutcome(interrupted = true))
+            }
         } catch (e: TvLockedException) {
             _state.value = WorkState.UndoFailed(req.serial, req.tvName, UndoProblem.LOCKED, e.byPhone)
         } catch (e: AdbError.Unauthorized) {

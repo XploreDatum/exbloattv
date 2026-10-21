@@ -11,6 +11,7 @@ import kotlinx.coroutines.awaitCancellation
 import dev.mntl.exbloattv.cleanup.UndoFailure
 import dev.mntl.exbloattv.cleanup.UndoReport
 import dev.mntl.exbloattv.state.ChangeKind
+import dev.mntl.exbloattv.state.TvStateStore
 import dev.mntl.exbloattv.cleanup.LauncherSwap
 import dev.mntl.exbloattv.cleanup.Step
 import dev.mntl.exbloattv.cleanup.StepStatus
@@ -91,6 +92,26 @@ class CleanupWorkTest {
         assertEquals(UndoProblem.UNREACHABLE, s.problem)
         work.acknowledge("S")
         assertEquals(WorkState.Idle, work.state.value)
+        appScope.cancel()
+    }
+
+    @Test fun undoOnATvSetUpByANewerAppVersionSaysSoAndChangesNothing() = runTest {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val tv = FakeTv()
+        val v2 = """{"version":2,"serial":"S","changes":[]}"""
+        tv.fs[TvStateStore.FILE] = v2
+        val work = CleanupWork(
+            connector = object : AdbConnector {
+                override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient = tv.adb
+            },
+            phoneName = { "Pixel · ab12" },
+            swapFor = { store, phone -> LauncherSwap(ApkDownloader(OkHttpClient(), File("build/tmp-apk")), store, phone) },
+            appScope = appScope,
+        )
+        assertTrue(work.startUndo(UndoRequest("S", "192.168.10.3", "Mi Box 4")))
+        advanceUntilIdle()
+        assertEquals(UndoProblem.TOO_NEW, (work.state.value as WorkState.UndoFailed).problem)
+        assertEquals(mapOf(TvStateStore.FILE to v2), tv.fs)
         appScope.cancel()
     }
 

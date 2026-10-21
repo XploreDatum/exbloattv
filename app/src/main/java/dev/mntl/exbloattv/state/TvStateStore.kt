@@ -7,6 +7,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import java.util.Base64
 import java.util.UUID
 
@@ -17,6 +20,14 @@ class TvStateWriteException(val step: String, val exitCode: Int, detail: String)
 /** The state file exists (or might) but could not be read; callers must not treat this as "empty". */
 class TvStateReadException(val exitCode: Int, detail: String) :
     Exception("could not read TV state (exit $exitCode): $detail")
+
+/**
+ * The state file was written by a newer version of ExBloat TV (a higher `version`, or valid JSON of our shape that
+ * this version can't decode, such as a kind of change it doesn't know). It is never read as empty, set aside or
+ * rewritten by this version: the person must update the app on this phone first.
+ */
+class TvStateTooNewException(val version: Int?) :
+    Exception("TV state was written by a newer version of ExBloat TV (version ${version ?: "unknown"})")
 
 /** Another phone holds a fresh run lock. */
 class TvLockedException(val byPhone: String, val at: Long) : Exception("TV is being cleaned by $byPhone")
@@ -35,6 +46,18 @@ class TvStateStore(
     suspend fun load(serial: String): TvState = mutex.withLock { loadLocked(serial) }
 
     suspend fun save(state: TvState) = mutex.withLock { saveLocked(state) }
+
+    /**
+     * Read-only early check (e.g. before the person makes their choices): throws [TvStateTooNewException] if a newer
+     * version of the app set this TV up. Anything else (no file, unreadable, damaged) is left for a run to handle.
+     */
+    suspend fun requireNotTooNew(serial: String) = mutex.withLock {
+        val r = adb.shell("cat $FILE")
+        if (r.exitCode == 0) {
+            val p = parse(r.output)
+            if (p is Parsed.TooNew) throw TvStateTooNewException(p.version)
+        }
+    }
 
     suspend fun acquireLock(serial: String, phone: String): Result<TvState> = mutex.withLock {
         val state = loadLocked(serial)
@@ -89,17 +112,47 @@ class TvStateStore(
             if (r.output.contains("No such file", ignoreCase = true)) return TvState(serial = serial)
             throw TvStateReadException(r.exitCode, r.output.trim().take(200))
         }
-        val parsed = try {
-            json.decodeFromString<TvState>(r.output)
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            null
+        when (val p = parse(r.output)) {
+            is Parsed.TooNew -> throw TvStateTooNewException(p.version)
+            is Parsed.Ok -> if (p.state.serial == serial) return p.state
+            Parsed.NotOurs -> Unit
         }
-        if (parsed != null && parsed.serial == serial) return parsed
-        // Corrupted, or written for a different TV: keep it aside and start fresh.
+        // Not JSON / not our file at all, or written for a different TV: keep it aside and start fresh.
         val aside = adb.shell("mv $FILE $FILE.bad-${now()}")
         if (aside.exitCode != 0) throw TvStateWriteException("set-aside", aside.exitCode, aside.output.trim().take(200))
         return TvState(serial = serial)
+    }
+
+    private sealed interface Parsed {
+        data class Ok(val state: TvState) : Parsed
+        data class TooNew(val version: Int?) : Parsed
+        data object NotOurs : Parsed
+    }
+
+    /**
+     * Lenient first: only text that isn't a JSON object with a string `serial` is "not ours". Anything of our shape
+     * with a higher (or unreadable) `version`, or that doesn't decode (a newer app's change kind, a field whose type
+     * changed), was written by a newer app and must never be replaced.
+     */
+    private fun parse(text: String): Parsed {
+        val obj = try {
+            json.parseToJsonElement(text) as? JsonObject
+        } catch (e: Exception) {
+            null
+        } ?: return Parsed.NotOurs
+        val serial = obj["serial"] as? JsonPrimitive
+        if (serial == null || !serial.isString) return Parsed.NotOurs
+        val version = when (val v = obj["version"]) {
+            null -> SUPPORTED_VERSION
+            is JsonPrimitive -> if (v.isString) null else v.intOrNull
+            else -> null
+        }
+        if (version == null || version > SUPPORTED_VERSION) return Parsed.TooNew(version)
+        return try {
+            Parsed.Ok(json.decodeFromJsonElement(TvState.serializer(), obj))
+        } catch (e: Exception) {
+            Parsed.TooNew(version)
+        }
     }
 
     private suspend fun saveLocked(state: TvState) {
@@ -128,6 +181,11 @@ class TvStateStore(
         const val DIR = "/data/local/tmp/exbloattv"
         const val FILE = "$DIR/state.json"
         const val LOCK_EXPIRY_MS = 10 * 60 * 1000L
+        /**
+         * The newest state-file `version` this app understands. A later version that adds anything this one must not
+         * drop on a rewrite (unknown keys are ignored and so lost when this version writes) must raise it.
+         */
+        const val SUPPORTED_VERSION = 1
         private const val CHUNK = 32 * 1024
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     }

@@ -172,6 +172,71 @@ class TvStateStoreTest {
         assertNull(fs[file])
     }
 
+    // --- a file from a newer version of the app is never read as empty or rewritten ---------------------------
+
+    private fun assertTooNewAndUntouched(text: String, block: suspend () -> Unit) {
+        fs[file] = text
+        fake.log.clear()
+        try { r { block() }; fail("expected TvStateTooNewException") } catch (_: TvStateTooNewException) {}
+        assertEquals(text, fs[file])
+        assertEquals(setOf(file), fs.keys)
+        assertTrue(fake.log.none { it.startsWith("echo ") || it.startsWith("mv ") || it.startsWith("rm ") })
+    }
+
+    @Test fun newerVersionThrowsAndLeavesTheFileUntouched() {
+        val v2 = """{"version":2,"serial":"SER1","changes":[],"newThing":{"a":1}}"""
+        assertTooNewAndUntouched(v2) { store.load(serial) }
+        assertTooNewAndUntouched(v2) { store.appendChange(serial, change("1")) }
+        assertTooNewAndUntouched(v2) { store.acquireLock(serial, "Pixel 8") }
+        assertTooNewAndUntouched(v2) { store.releaseLock(serial, "Pixel 8") }
+        assertTooNewAndUntouched(v2) { store.setOriginalIfAbsent(serial, rp()) }
+    }
+
+    @Test fun newerVersionForAnotherTvIsAlsoNeverSetAside() {
+        assertTooNewAndUntouched("""{"version":3,"serial":"OTHER"}""") { store.load(serial) }
+    }
+
+    @Test fun unknownChangeKindThrowsAndLeavesTheFileUntouched() {
+        val future = """{"version":1,"serial":"SER1","changes":[{"id":"x","kind":"FREEZE","pkg":"a.b","from":"on","to":"frozen","byPhone":"P","at":1,"verified":true}]}"""
+        assertTooNewAndUntouched(future) { store.load(serial) }
+        assertTooNewAndUntouched(future) { store.removeChanges(serial, setOf("x")) }
+    }
+
+    @Test fun validJsonOfOurShapeThatDoesNotDecodeIsNeverSetAside() {
+        // e.g. a field changed type in a later version without a version bump; or a non-numeric version.
+        assertTooNewAndUntouched("""{"version":1,"serial":"SER1","lock":"held"}""") { store.load(serial) }
+        assertTooNewAndUntouched("""{"version":"two","serial":"SER1"}""") { store.load(serial) }
+    }
+
+    @Test fun versionOneAndAMissingVersionStillLoad() {
+        fs[file] = """{"serial":"SER1","changes":[]}"""
+        assertEquals(TvState(serial = serial), r { store.load(serial) })
+        fs[file] = """{"version":1,"serial":"SER1"}"""
+        assertEquals(TvState(serial = serial), r { store.load(serial) })
+    }
+
+    @Test fun jsonThatIsNotOurFileIsSetAside() {
+        for ((i, text) in listOf("""{"hello":"world"}""", "[1,2,3]", "\"text\"", """{"serial":5}""").withIndex()) {
+            fs.clear()
+            fs[file] = text
+            clock = 100L + i
+            assertEquals(TvState(serial = serial), r { store.load(serial) })
+            assertEquals(text, fs["$file.bad-${100 + i}"])
+            assertNull(fs[file])
+        }
+    }
+
+    @Test fun requireNotTooNewIsReadOnly() {
+        fs[file] = """{"version":2,"serial":"SER1"}"""
+        try { r { store.requireNotTooNew(serial) }; fail("expected TvStateTooNewException") } catch (_: TvStateTooNewException) {}
+        fs[file] = "{not json"
+        r { store.requireNotTooNew(serial) } // garbage is not "too new"; nothing is set aside by a check
+        assertEquals("{not json", fs[file])
+        fs.remove(file)
+        r { store.requireNotTooNew(serial) }
+        assertTrue(fake.log.none { it.startsWith("echo ") || it.startsWith("mv ") || it.startsWith("rm ") })
+    }
+
     @Test fun otherTvsFileIsKeptAndStateStartsFresh() {
         val foreign = TvState(serial = "OTHER", changes = listOf(change("1")))
         r { store.save(foreign) }

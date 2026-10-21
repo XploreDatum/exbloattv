@@ -149,7 +149,10 @@ fun ExBloatNavGraph(graph: AppGraph) {
             val serial = entry.arguments?.getString("serial").orEmpty()
             val vm = viewModel {
                 KeepViewModel(
-                    load = { graph.session.cached(serial) ?: graph.session.reload(serial) },
+                    load = {
+                        (graph.session.cached(serial) ?: graph.session.reload(serial))
+                            .also { graph.session.requireStateNotTooNew(it.serial) }
+                    },
                     savedChoices = { graph.repository.savedChoices(serial) },
                     resolveLabel = { app -> graph.session.label(serial, app) },
                     onLeave = { graph.session.release(serial) },

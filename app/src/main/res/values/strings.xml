@@ -329,6 +329,8 @@
     <string name="undo_problem_not_allowed">The TV didn\'t allow this phone. Press OK on “Allow USB debugging?” on the TV, then try again.</string>
     <string name="undo_problem_unreachable">Can\'t reach the TV. Make sure it\'s on and on the same Wi-Fi.</string>
     <string name="undo_problem_unexpected">Something went wrong while undoing. What\'s left stays on the list, so try again.</string>
+    <string name="too_new_title">Update ExBloat TV first</string>
+    <string name="too_new_body">This TV was set up with a newer version of ExBloat TV. Update the app on this phone first.</string>
     <string name="tv_log_title">What was changed</string>
     <string name="tv_log_loading">Reading the list of changes from the TV…</string>
     <string name="tv_log_unreachable">Can\'t reach the TV right now, so the list of changes can\'t be shown.</string>

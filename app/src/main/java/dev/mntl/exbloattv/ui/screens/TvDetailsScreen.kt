@@ -41,6 +41,7 @@ import dev.mntl.exbloattv.state.Change
 import dev.mntl.exbloattv.state.ChangeKind
 import dev.mntl.exbloattv.state.TvState
 import dev.mntl.exbloattv.state.TvStateStore
+import dev.mntl.exbloattv.state.TvStateTooNewException
 import dev.mntl.exbloattv.ui.components.PrimaryButton
 import dev.mntl.exbloattv.ui.components.QuietButton
 import dev.mntl.exbloattv.ui.components.SegmentedGroup
@@ -59,6 +60,8 @@ sealed interface LogState {
     data object Loading : LogState
     data class Loaded(val state: TvState) : LogState
     data object Unreachable : LogState
+    /** A newer version of the app set this TV up: this one can't read its change log (and must not change it). */
+    data object TooNew : LogState
 }
 
 enum class LockView { NONE, OTHER_PHONE, THIS_PHONE_INTERRUPTED }
@@ -108,6 +111,8 @@ class TvDetailsViewModel(
                 LogState.Loaded(readState(host, serial))
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: TvStateTooNewException) {
+                LogState.TooNew
             } catch (e: Exception) {
                 LogState.Unreachable
             }
@@ -149,6 +154,8 @@ fun TvDetailsScreen(
         return
     }
     val busy = work.busy
+    // A newer app version set this TV up: this one must not clean or undo it.
+    val tooNew = log == LogState.TooNew
     ExScreen(
         onBack = onBack,
         snackbar = snackbar,
@@ -156,9 +163,9 @@ fun TvDetailsScreen(
             if (mine is WorkState.Cleaning) {
                 PrimaryButton(stringResource(R.string.home_see), onClick = onSeeCleaning)
             } else {
-                PrimaryButton(stringResource(R.string.tv_clean_again), enabled = !busy, onClick = { onCleanAgain(t.lastHost) })
+                PrimaryButton(stringResource(R.string.tv_clean_again), enabled = !busy && !tooNew, onClick = { onCleanAgain(t.lastHost) })
             }
-            QuietButton(stringResource(R.string.tv_undo), enabled = !busy, onClick = { confirm = true })
+            QuietButton(stringResource(R.string.tv_undo), enabled = !busy && !tooNew, onClick = { confirm = true })
         },
     ) {
         ScreenTitle(t.name)
@@ -172,7 +179,7 @@ fun TvDetailsScreen(
         VSpace(6)
         val reach = when (log) {
             LogState.Loading -> Reach.CHECKING
-            is LogState.Loaded -> Reach.READY
+            is LogState.Loaded, LogState.TooNew -> Reach.READY
             LogState.Unreachable -> Reach.AWAY
         }
         StatusDot(
@@ -203,6 +210,10 @@ fun TvDetailsScreen(
             LogState.Unreachable -> {
                 Supporting(stringResource(R.string.tv_log_unreachable))
                 QuietButton(stringResource(R.string.tv_refresh), onClick = { vm.refresh(t.lastHost) })
+            }
+            LogState.TooNew -> {
+                Text(stringResource(R.string.too_new_title), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(horizontal = 4.dp))
+                Supporting(stringResource(R.string.too_new_body))
             }
             is LogState.Loaded -> {
                 val lock = l.state.lock
@@ -271,9 +282,12 @@ private fun UndoSection(mine: WorkState?, nameOf: (String) -> String, onRetry: (
                     UndoProblem.NOT_ALLOWED -> stringResource(R.string.undo_problem_not_allowed)
                     UndoProblem.UNREACHABLE -> stringResource(R.string.undo_problem_unreachable)
                     UndoProblem.UNEXPECTED -> stringResource(R.string.undo_problem_unexpected)
+                    UndoProblem.TOO_NEW -> stringResource(R.string.too_new_body)
                 },
             )
-            FilledTonalButton(onClick = onRetry, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(stringResource(R.string.try_again)) }
+            if (mine.problem != UndoProblem.TOO_NEW) {
+                FilledTonalButton(onClick = onRetry, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(stringResource(R.string.try_again)) }
+            }
         }
         is WorkState.Undone -> {
             val o = mine.outcome

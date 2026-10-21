@@ -11,6 +11,7 @@ import dev.mntl.exbloattv.state.TvLockedException
 import dev.mntl.exbloattv.state.TvStateReadException
 import dev.mntl.exbloattv.state.TvState
 import dev.mntl.exbloattv.state.TvStateStore
+import dev.mntl.exbloattv.state.TvStateTooNewException
 import dev.mntl.exbloattv.state.TvStateWriteException
 import dev.mntl.exbloattv.tv.Inventory
 import dev.mntl.exbloattv.tv.Parsers
@@ -290,6 +291,9 @@ class CleanupRunner(
                     Outcome.Failed(NO_COMEBACK, waitForTv = true)
                 } catch (e: TvLockedException) {
                     Outcome.Failed(lockedBy(e.byPhone), block = true)
+                } catch (e: TvStateTooNewException) {
+                    // A newer app version set this TV up: nothing more may run, and Retry can't help.
+                    Outcome.Failed(TOO_NEW_MESSAGE, block = true)
                 } catch (e: TvReadException) {
                     Outcome.Failed("Couldn't check the TV (${e.what}). Tap Retry")
                 } catch (e: TvStateReadException) {
@@ -808,6 +812,8 @@ class CleanupRunner(
         const val NO_RESTART = "The TV didn't restart. Tap Retry."
         const val CHANGED_ELSEWHERE_MESSAGE =
             "This TV was changed from another phone while you were away. Check the TV again before carrying on"
+        const val TOO_NEW_MESSAGE =
+            "This TV was set up with a newer version of ExBloat TV. Update the app on this phone first."
         const val LOST = "Lost connection to the TV. Check it's on and on the same Wi-Fi, then tap Retry"
         const val SWAP_UNKNOWN = "Couldn't check the TV's home screen. Check the TV is on, then tap Retry"
         const val NO_COMEBACK = "The TV didn't come back after restarting. Check it's on, then tap Retry"

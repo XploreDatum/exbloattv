@@ -693,6 +693,26 @@ class CleanupRunnerTest {
         assertThat(state().lock).isEqualTo(Lock("Mum's phone", 0))
     }
 
+    @Test fun stateFromANewerAppVersionStopsTheRunAndIsNeverRewritten() = runTest {
+        val v2 = """{"version":2,"serial":"$serial","changes":[],"lock":null}"""
+        tv.fs[TvStateStore.FILE] = v2
+        val runner = runner()
+
+        val c = start(runner, listOf(Step.Disable(ADS)))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(FAILED, PENDING))
+        assertThat(c.last.steps[0].message).isEqualTo(CleanupRunner.TOO_NEW_MESSAGE)
+        assertThat(c.last.waitingForTv).isFalse()
+        runner.retry(0)
+        advanceUntilIdle()
+        assertThat(c.statuses).isEqualTo(listOf(FAILED, PENDING))
+        c.job.cancel()
+        advanceUntilIdle()
+        assertThat(tvCommands()).isEmpty()
+        assertThat(tv.fs).isEqualTo(mapOf(TvStateStore.FILE to v2))
+    }
+
     @Test fun lockIsRefreshedBeforeEveryStepSoATakeoverStopsTheRun() = runTest {
         afterCommand = { if (it == disableCmd(OTHER)) writeState(state().copy(lock = Lock("Mum's phone", 0))) }
 

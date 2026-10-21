@@ -33,6 +33,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.mntl.exbloattv.R
+import dev.mntl.exbloattv.state.TvStateTooNewException
 import dev.mntl.exbloattv.catalog.Category
 import dev.mntl.exbloattv.ui.components.AppRow
 import dev.mntl.exbloattv.ui.components.PrimaryButton
@@ -58,15 +59,19 @@ fun KeepScreen(vm: KeepViewModel, onBack: () -> Unit, onFindAgain: () -> Unit, o
             ScreenTitle(stringResource(R.string.keep_title))
             Busy(stringResource(R.string.keep_loading))
         }
-        is KeepUiState.Failed -> ExScreen(
-            onBack = onBack,
-            actions = {
-                PrimaryButton(stringResource(R.string.try_again), onClick = vm::retry)
-                QuietButton(stringResource(R.string.keep_find_again), onClick = onFindAgain)
-            },
-        ) {
-            ScreenTitle(stringResource(R.string.keep_failed_title))
-            Supporting(stringResource(R.string.keep_failed_body))
+        is KeepUiState.Failed -> {
+            val tooNew = s.error is TvStateTooNewException
+            ExScreen(
+                onBack = onBack,
+                actions = {
+                    // Trying again can't help until the app is updated.
+                    if (!tooNew) PrimaryButton(stringResource(R.string.try_again), onClick = vm::retry)
+                    QuietButton(stringResource(R.string.keep_find_again), onClick = onFindAgain)
+                },
+            ) {
+                ScreenTitle(stringResource(if (tooNew) R.string.too_new_title else R.string.keep_failed_title))
+                Supporting(stringResource(if (tooNew) R.string.too_new_body else R.string.keep_failed_body))
+            }
         }
         is KeepUiState.Ready -> {
             ExScreen(

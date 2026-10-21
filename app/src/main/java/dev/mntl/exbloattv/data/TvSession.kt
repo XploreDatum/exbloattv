@@ -7,11 +7,14 @@ import dev.mntl.exbloattv.apps.AppLabelResolver
 import dev.mntl.exbloattv.catalog.Catalog
 import dev.mntl.exbloattv.catalog.CategorizedApp
 import dev.mntl.exbloattv.catalog.Categorizer
+import dev.mntl.exbloattv.state.TvStateStore
+import dev.mntl.exbloattv.state.TvStateTooNewException
 import dev.mntl.exbloattv.tv.InstalledPackage
 import dev.mntl.exbloattv.tv.Inventory
 import dev.mntl.exbloattv.tv.TvInfo
 import dev.mntl.exbloattv.tv.TvInspector
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Everything the Keep screen needs about one TV, read when the person connected ("before" numbers included). */
 data class LoadedTv(
@@ -73,6 +76,23 @@ class TvSession(
     }
 
     fun cached(serial: String): LoadedTv? = loaded[serial]
+
+    /**
+     * Read-only, before the person makes their choices: throws [TvStateTooNewException] if a newer version of the app
+     * set this TV up. Any other problem (no connection, unreadable file) is left for the cleanup itself to report.
+     */
+    suspend fun requireStateNotTooNew(serial: String) {
+        val client = clients[serial] ?: return
+        try {
+            TvStateStore(client).requireNotTooNew(serial)
+        } catch (e: TvStateTooNewException) {
+            throw e
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Not this check's business; the cleanup's first step reads the file again and says what's wrong.
+        }
+    }
 
     /** Drops this session's copy, so the next Keep screen reads the TV again. */
     fun invalidate(serial: String) {
