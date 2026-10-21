@@ -57,6 +57,27 @@ class DadbConnectorTest {
         assertThat(ms).isLessThan(3_000L)
     }
 
+    @Test fun timeoutReleasesTheClientSocketBeforeAnyTeardown() = runBlocking {
+        val port = silentServer()
+        runCatching { connector.connect("127.0.0.1", port, 500) }
+        val server = accepted.single()
+        server.soTimeout = 2_000
+        // Drain what the client sent (its CNXN); the next read must see EOF/reset, not a read timeout.
+        val end = runCatching { val i = server.getInputStream(); while (i.read(ByteArray(4096)) >= 0) { } }.exceptionOrNull()
+        assertThat(end).isNotInstanceOf(java.net.SocketTimeoutException::class.java)
+    }
+
+    @Test fun cancellingTheCallerReleasesTheClientSocket() = runBlocking {
+        val port = silentServer()
+        val job = launch(Dispatchers.Default) { connector.connect("127.0.0.1", port, 60_000) }
+        kotlinx.coroutines.delay(300)
+        withTimeout(3_000) { job.cancelAndJoinCompat() }
+        val server = accepted.single()
+        server.soTimeout = 2_000
+        val end = runCatching { val i = server.getInputStream(); while (i.read(ByteArray(4096)) >= 0) { } }.exceptionOrNull()
+        assertThat(end).isNotInstanceOf(java.net.SocketTimeoutException::class.java)
+    }
+
     @Test fun cancellingTheCallerReturnsPromptly() = runBlocking {
         val port = silentServer()
         val job = launch(Dispatchers.Default, start = CoroutineStart.DEFAULT) {
