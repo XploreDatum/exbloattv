@@ -874,6 +874,58 @@ class CleanupRunnerTest {
         assertThat(state().lock).isNull()
     }
 
+    @Test fun stopDuringTheHomeScreenSwapFinishesItThenRunsNothingMore() = runTest {
+        lateinit var c: Collected
+        // Stop arrives while the swap (which always runs to the end) is half done.
+        afterCommand = { if (it == disableCmd(STOCK)) c.job.cancel() }
+
+        c = start(runner(), listOf(Step.SwapLauncher, Step.RebootAndVerify, Step.TrimCaches))
+        advanceUntilIdle()
+
+        assertThat(c.job.isCancelled).isTrue()
+        assertThat(state().changes.last().kind).isEqualTo(ChangeKind.LAUNCHER_SWAP) // the swap finished and logged
+        assertThat(tv.adb.log).doesNotContain("reboot")
+        assertThat(tvCommands()).doesNotContain(BOOT_ID)
+        assertThat(tvCommands()).doesNotContain("pm trim-caches 999G")
+        assertThat(state().lock).isNull()
+    }
+
+    @Test fun stopJustAfterTheRestartStepBeganNeverRestartsTheTv() = runTest {
+        lateinit var c: Collected
+        // The restart step has refreshed the lock and is reading boot_id when Stop arrives.
+        afterCommand = { if (it == BOOT_ID) c.job.cancel() }
+
+        c = start(runner(), listOf(Step.Disable(ADS), Step.RebootAndVerify, Step.TrimCaches))
+        advanceUntilIdle()
+
+        assertThat(c.job.isCancelled).isTrue()
+        assertThat(tv.adb.log).doesNotContain("reboot")
+        assertThat(tvCommands()).doesNotContain("pm trim-caches 999G")
+        assertThat(state().changes.map { it.pkg to it.verified }).containsExactly(ADS to true)
+        assertThat(state().lock).isNull()
+    }
+
+    @Test fun stopWhileTheNextStepRefreshesTheLockRunsNothingOnTheTv() = runTest {
+        lateinit var c: Collected
+        var disabled = false
+        var moves = 0
+        afterCommand = { cmd ->
+            if (cmd == disableCmd(ADS)) disabled = true
+            // After step 1: its log write (1st mv), then step 2's lock refresh (2nd mv). Stop lands on the refresh.
+            if (disabled && cmd.startsWith("mv ${TvStateStore.FILE}.tmp") && ++moves == 2) c.job.cancel()
+        }
+
+        c = start(runner(), listOf(Step.Disable(ADS), Step.Disable(OTHER), Step.RebootAndVerify))
+        advanceUntilIdle()
+
+        assertThat(c.job.isCancelled).isTrue()
+        assertThat(moves).isAtLeast(2)
+        assertThat(tvCommands()).doesNotContain(disableCmd(OTHER))
+        assertThat(tv.adb.log).doesNotContain("reboot")
+        assertThat(state().changes.map { it.pkg }).containsExactly(ADS)
+        assertThat(state().lock).isNull()
+    }
+
     // --- retry / skip ---------------------------------------------------------------------------------------
 
     @Test fun retryReRunsOnlyThatStep() = runTest {

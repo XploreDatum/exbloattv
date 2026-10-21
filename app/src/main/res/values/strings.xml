@@ -245,7 +245,7 @@
     <string name="cleaning_not_running">No cleanup is running.</string>
     <string name="cleaning_stop">Stop</string>
     <string name="cleaning_stop_cd">Stop cleaning</string>
-    <string name="cleaning_stopping">Stopping after the step that\'s running now…</string>
+    <string name="cleaning_stopping">Stopping after the current step…</string>
     <string name="stop_confirm_title">Stop cleaning?</string>
     <string name="stop_confirm_body">Changes already made stay recorded and can be undone.</string>
     <string name="stop_confirm_go">Stop cleaning</string>

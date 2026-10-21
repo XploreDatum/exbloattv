@@ -149,6 +149,8 @@ class CleanupRunner(
         private var foreignDirty = false
         /** Ids of changes this run verified; another phone's Undo removes them. */
         private val confirmedIds = mutableSetOf<String>()
+        /** The run's own coroutine; inside a step (NonCancellable) it is the only way to see that Stop came. */
+        private var runJob: kotlinx.coroutines.Job? = null
         /** Set once another phone changed the TV mid-run: the plan is stale, nothing more may run. */
         private var stale = false
         private val verifiedDisabled = linkedSetOf<String>()
@@ -163,6 +165,7 @@ class CleanupRunner(
         private val bootBefore = mutableMapOf<Int, String>()
 
         suspend fun execute() {
+            runJob = currentCoroutineContext()[kotlinx.coroutines.Job]
             try {
                 mutex.withLock { emit() }
                 while (true) {
@@ -268,6 +271,7 @@ class CleanupRunner(
 
         private suspend fun runStep(i: Int) {
             while (true) {
+                currentCoroutineContext().ensureActive() // also between a reconnect and the retried step
                 if (!ensureConnected()) {
                     finish(i, Outcome.Failed(pauseMessage, waitForTv = true))
                     return
@@ -390,8 +394,18 @@ class CleanupRunner(
 
         // --- steps --------------------------------------------------------------------------------------------
 
+        /**
+         * Stop (the run cancelled) can't interrupt a step once it acts, since steps run NonCancellable so the log is never
+         * half-written. So it is checked explicitly wherever nothing has changed on the TV for this step yet: before
+         * the lock refresh, after it (before the step's first command), and right before a restart.
+         */
+        private fun stopIfRequested() {
+            if (runJob?.isCancelled == true) throw CancellationException("stopped before this step changed the TV")
+        }
+
         private suspend fun executeStep(i: Int): Outcome {
             val adb = checkNotNull(adb)
+            stopIfRequested()
             if (i != 0) changedElsewhere()?.let { return it }
             val locked = store.acquireLock(serial, phone).getOrThrow()
             if (foreignAtStart == null) foreignAtStart = foreignIds(locked)
@@ -403,6 +417,7 @@ class CleanupRunner(
                 needsRecover = false
                 if (r is SwapResult.RolledBack) note = onSwapRolledBack(r, i)
             }
+            if (step != Step.SaveRestorePoint) stopIfRequested()
             return when (step) {
                 Step.SaveRestorePoint -> Outcome.Done(note)
                 is Step.Disable -> disable(adb, i, step.pkg)
@@ -678,6 +693,7 @@ class CleanupRunner(
                 // never reached the TV would otherwise "reconnect" to the same running TV and pass every check.
                 val before = bootBefore[i] ?: bootId(checkNotNull(adb)).also {
                     bootBefore[i] = it
+                    stopIfRequested() // never restart a TV the person just asked to stop
                     adopt(swap.rebootAndReconnect(checkNotNull(adb), reconnect = { open() }))
                 }
                 val after = bootId(checkNotNull(adb))

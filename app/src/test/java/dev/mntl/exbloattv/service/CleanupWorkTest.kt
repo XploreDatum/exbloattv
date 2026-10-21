@@ -18,6 +18,8 @@ import dev.mntl.exbloattv.cleanup.StepStatus
 import dev.mntl.exbloattv.ui.screens.MiBoxFixture
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -152,6 +154,40 @@ class CleanupWorkTest {
         assertTrue(tv.adb.log.none { it.contains("com.example.three") })
         val log = tv.fs.getValue(TvStateStore.FILE)
         assertTrue(log.contains("com.example.one")) // what was done stays recorded for Undo
+        appScope.cancel()
+    }
+
+    @Test fun stopConfirmedAsTheRestartStepBeginsNeverRestartsTheTv() = runTest {
+        // The live E2E: Stop confirmed around the end of the home-screen step; the restart step had already begun.
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val tv = FakeTv()
+        tv.installed += "com.example.one"
+        val bootId = "cat /proc/sys/kernel/random/boot_id"
+        lateinit var work: CleanupWork
+        tv.adb.onCommand.let { base ->
+            tv.adb.onCommand = { cmd ->
+                if (cmd == bootId) {
+                    // The person's Stop lands now (the UI calls abandonCleanup); its cancel takes effect at once.
+                    appScope.launch(start = CoroutineStart.UNDISPATCHED) { work.abandonCleanup() }
+                    tv.adb.responses[cmd] = "boot-1\n"
+                    tv.adb.exitCodes[cmd] = 0
+                } else {
+                    base(cmd)
+                }
+            }
+        }
+        work = workOn(object : AdbConnector {
+            override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient = tv.adb
+        }, appScope)
+        val inv = MiBoxFixture.inventory()
+        val plan = listOf(Step.Disable("com.example.one"), Step.RebootAndVerify)
+        assertTrue(work.startCleanup(CleanupRequest(inv.info.serial, "h", "Mi Box 4", plan, inv, emptyMap())))
+        advanceUntilIdle()
+
+        assertTrue(tv.adb.log.contains(bootId)) // the restart step had begun
+        assertFalse(tv.adb.log.contains("reboot"))
+        assertEquals(WorkState.Idle, work.state.value)
+        assertFalse(tv.fs.getValue(TvStateStore.FILE).contains("\"lock\":{")) // lock released
         appScope.cancel()
     }
 
