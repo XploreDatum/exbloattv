@@ -497,6 +497,12 @@ class CleanupRunner(
             if (entry.kind == ChangeKind.DISABLE) {
                 adb.shell("pm disable-user --user 0 $pkg")
                 settleDisable(i, entry, pkg, presence(adb, pkg))?.let { return it }
+                // Spec §8: the fallback is only for apps that came with the TV. For an app the person installed,
+                // removing it for the user deletes it (nothing to install-existing from), so it stays on.
+                if (!cameWithTv(pkg)) {
+                    discard("$i", entry)
+                    return Outcome.Failed(CANT_SWITCH_OFF)
+                }
                 // Printed success but still on: remove it for this user instead (Undo: install-existing).
                 entry = entry.copy(kind = ChangeKind.REMOVE_FOR_USER, to = REMOVED)
                 inflight["$i"] = entry
@@ -505,8 +511,11 @@ class CleanupRunner(
             adb.shell("pm uninstall -k --user 0 $pkg")
             settleDisable(i, entry, pkg, presence(adb, pkg))?.let { return it }
             discard("$i", entry)
-            return Outcome.Failed("Couldn't switch this app off")
+            return Outcome.Failed(CANT_SWITCH_OFF)
         }
+
+        /** From the inventory the plan was made from; an app it doesn't know is treated as one the person installed. */
+        private fun cameWithTv(pkg: String) = before.packages.firstOrNull { it.name == pkg }?.isSystem == true
 
         /** Decides a disable from what the TV shows; null while the app is still on. */
         private suspend fun settleDisable(i: Int, entry: Change, pkg: String, seen: Presence): Outcome? = when (seen) {
@@ -818,6 +827,7 @@ class CleanupRunner(
         const val SWAP_UNKNOWN = "Couldn't check the TV's home screen. Check the TV is on, then tap Retry"
         const val NO_COMEBACK = "The TV didn't come back after restarting. Check it's on, then tap Retry"
         const val PROTECTED = "This app keeps the TV working, so it was left on"
+        const val CANT_SWITCH_OFF = "Couldn't switch this app off"
         const val LOG_FAILED = "Couldn't update the record of changes on the TV. Tap Retry"
         const val TALK_FAILED = "Something went wrong talking to the TV. Tap Retry"
         const val UNEXPECTED = "Something unexpected went wrong. Tap Retry"

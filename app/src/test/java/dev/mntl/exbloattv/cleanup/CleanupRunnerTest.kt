@@ -409,6 +409,20 @@ class CleanupRunnerTest {
         ).inOrder()
     }
 
+    @Test fun anInstalledAppThatWontSwitchOffIsNeverRemovedForTheUser() = runTest {
+        // Removing an app the person installed "for the user" deletes its APK: it could never be brought back.
+        tv.stubbornPackages += USERAPP
+        val c = start(runner(), listOf(Step.Disable(USERAPP), Step.Disable(OTHER)))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED, DONE))
+        assertThat(c.last.steps[1].message).isEqualTo("Couldn't switch this app off")
+        assertThat(tvCommands().none { it.startsWith("pm uninstall") }).isTrue()
+        assertThat(tv.installed).contains(USERAPP)
+        assertThat(state().changes.map { it.pkg }).containsExactly(OTHER)
+        c.job.cancel()
+    }
+
     @Test fun disableAndFallbackBothFailingFailsTheStepLogsNothingAndTheRunContinues() = runTest {
         tv.stubbornPackages += ADS
         stubbornRemovals += ADS
