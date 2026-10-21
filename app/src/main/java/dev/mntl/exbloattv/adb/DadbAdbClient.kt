@@ -8,11 +8,13 @@ import dadb.AdbStream
 import dadb.Dadb
 import dadb.InstallResult
 import dadb.SyncResult
+import dev.mntl.exbloattv.discovery.bindOrDefault
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -109,7 +111,8 @@ internal class OwnedDadb(
 
 /**
  * [bind] is called on each new socket before it connects; the app uses it to route TV connections over the phone's
- * Wi-Fi even when Android's default network is mobile data. The default leaves the socket unbound.
+ * Wi-Fi even when Android's default network is mobile data. The default leaves the socket unbound; a [bind] that
+ * throws leaves it on default routing (see [bindOrDefault]).
  */
 class DadbConnector internal constructor(
     private val keys: () -> AdbKeyPair,
@@ -123,12 +126,16 @@ class DadbConnector internal constructor(
     override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient {
         val keyPair = withContext(Dispatchers.IO) { keys() }
         val socket = Socket()
+        // Before connecting and outside any error mapping: a refused bind (VPN, stale network) keeps default routing.
+        withContext(Dispatchers.IO) { bindOrDefault(socket, bind) }
+        // Only a failure after the TCP connection is up can mean "not approved on the TV yet".
+        val inHandshake = AtomicBoolean(false)
         // The handshake blocks until the person accepts the key on the TV and a blocking read cannot be
         // interrupted. We own the socket, so on timeout/cancel/error we close it, which fails the read
         // immediately and frees the thread; a late approval then finds a closed socket.
         val work = CoroutineScope(SupervisorJob() + Dispatchers.IO).async {
-            bind(socket)
             socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+            inHandshake.set(true)
             socket.keepAlive = true
             RawAdbConnection.connect(socket, keyPair)
         }
@@ -137,9 +144,9 @@ class DadbConnector internal constructor(
         } catch (e: Throwable) {
             work.cancel()
             runCatching { socket.close() }
-            if (e is TimeoutCancellationException) throw AdbError.Unauthorized()
+            if (e is TimeoutCancellationException) throw if (inHandshake.get()) AdbError.Unauthorized() else AdbError.Timeout()
             if (e is CancellationException) throw e
-            throw mapAdbException(e, duringHandshake = true)
+            throw mapAdbException(e, duringHandshake = inHandshake.get())
         }
         return DadbAdbClient(OwnedDadb(connection, socket), host)
     }

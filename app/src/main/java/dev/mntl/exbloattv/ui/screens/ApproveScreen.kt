@@ -95,6 +95,11 @@ class ApproveViewModel(
                 } catch (e: AdbError.Refused) {
                     _state.value = ApproveState.NeedsSetup
                     return@launch
+                } catch (e: AdbError.Timeout) {
+                    // The last try only gets what is left of the window; running out then is the window ending.
+                    val over = started.elapsedNow().inWholeMilliseconds >= windowMs
+                    _state.value = if (over) ApproveState.TimedOut else ApproveState.Unreachable
+                    return@launch
                 } catch (e: AdbError) {
                     _state.value = ApproveState.Unreachable
                     return@launch

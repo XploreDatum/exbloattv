@@ -49,8 +49,25 @@ class WifiNetworkTest {
         assertEquals(listOf(false), bound) // called once, before connect
     }
 
-    @Test fun aBinderThatFailsMeansClosed() = runBlocking {
-        val probe = SocketPortProbe { throw java.io.IOException("Wi-Fi gone") }
-        ServerSocket(0).use { server -> assertFalse(probe.isOpen("127.0.0.1", server.localPort, 1_000)) }
+    @Test fun aBinderThatFailsStillProbesWithDefaultRouting() = runBlocking {
+        // A lockdown VPN refuses binding to Wi-Fi (EPERM): the probe must still look, not report every TV as gone.
+        var tried = 0
+        val probe = SocketPortProbe { tried++; throw java.net.SocketException("Operation not permitted") }
+        ServerSocket(0).use { server -> assertTrue(probe.isOpen("127.0.0.1", server.localPort, 1_000)) }
+        assertEquals(1, tried)
+        val closed = ServerSocket(0).use { it.localPort }
+        assertFalse(probe.isOpen("127.0.0.1", closed, 1_000))
+    }
+
+    @Test fun bindOrDefaultReportsTheFailureAndLeavesTheSocketUsable() {
+        val seen = mutableListOf<Exception>()
+        Socket().use { s ->
+            bindOrDefault(s, { throw IllegalStateException("stale network") }) { seen += it }
+            ServerSocket(0).use { server ->
+                s.connect(java.net.InetSocketAddress("127.0.0.1", server.localPort), 1_000)
+                assertTrue(s.isConnected)
+            }
+        }
+        assertEquals(1, seen.size)
     }
 }

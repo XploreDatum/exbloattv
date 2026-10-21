@@ -24,14 +24,15 @@ fun interface PortProbe {
 
 /**
  * Real probe: a plain TCP connect with a hard timeout. [bind] routes the socket over the phone's Wi-Fi (see
- * [WifiNetworkProvider.bind]) so probes never go out over mobile data; it is a no-op in tests.
+ * [WifiNetworkProvider.bind]) so probes never go out over mobile data; it is a no-op in tests. If binding fails the
+ * probe still runs, over default routing.
  */
 class SocketPortProbe(private val bind: (Socket) -> Unit = {}) : PortProbe {
     override suspend fun isOpen(host: String, port: Int, timeoutMs: Int): Boolean =
         withContext(ProbeDispatcher) {
             try {
                 Socket().use {
-                    bind(it)
+                    bindOrDefault(it, bind)
                     it.connect(InetSocketAddress(host, port), timeoutMs)
                     true
                 }

@@ -5,9 +5,11 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.util.Log
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -79,9 +81,35 @@ class WifiNetworkProvider(context: Context) {
         return link
     }
 
-    /** Routes [socket] over the Wi-Fi network; leaves it unbound (default routing) when there is no Wi-Fi. */
+    private val bindFailureLogged = AtomicBoolean(false)
+
+    /**
+     * Routes [socket] over the Wi-Fi network; leaves it unbound (default routing) when there is no Wi-Fi, or when
+     * binding is refused (e.g. an always-on VPN that blocks other networks, or a network that just went away).
+     */
     fun bind(socket: Socket) {
         val network = _current.value?.network ?: refresh()?.network ?: return
-        network.bindSocket(socket)
+        bindOrDefault(socket, network::bindSocket) { e ->
+            if (bindFailureLogged.compareAndSet(false, true)) {
+                Log.w(TAG, "Couldn't route TV connections over Wi-Fi; using the phone's default network", e)
+            }
+        }
+    }
+
+    private companion object {
+        const val TAG = "ExBloatWifi"
+    }
+}
+
+/**
+ * Routes [socket] with [bind]. If that fails (a lockdown VPN refuses it with EPERM, or the Wi-Fi network went stale)
+ * the socket keeps default routing and [onFailure] hears why: binding never decides whether a TV is there or whether
+ * it approved this phone; only the connect and the handshake that follow do.
+ */
+fun bindOrDefault(socket: Socket, bind: (Socket) -> Unit, onFailure: (Exception) -> Unit = {}) {
+    try {
+        bind(socket)
+    } catch (e: Exception) {
+        onFailure(e)
     }
 }

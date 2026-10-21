@@ -51,10 +51,29 @@ class DadbConnectorTest {
         assertThat(seen).containsExactly(false) // once, before connecting
     }
 
-    @Test fun aBinderThatFailsIsAConnectionFailureNotACrash() = runBlocking {
-        val bound = DadbConnector({ AdbKeys.loadOrCreate(File(tmp.root, "adb3"), "test") }, { throw java.net.ConnectException("Wi-Fi gone") })
-        val e = runCatching { bound.connect("127.0.0.1", silentServer(), 2_000) }.exceptionOrNull()
+    private fun failingBinder(dir: String) =
+        DadbConnector({ AdbKeys.loadOrCreate(File(tmp.root, dir), "test") }, { throw java.net.SocketException("Operation not permitted") })
+
+    @Test fun aBinderThatFailsStillConnectsWithDefaultRouting() = runBlocking {
+        // e.g. a lockdown VPN (EPERM) or a stale Wi-Fi network: the connection is still tried, over default routing.
+        val port = silentServer()
+        val e = runCatching { failingBinder("adb3").connect("127.0.0.1", port, 1_000) }.exceptionOrNull()
+        withTimeout(2_000) { while (accepted.isEmpty()) kotlinx.coroutines.delay(10) }
+        assertThat(accepted).hasSize(1) // the TCP connection reached the "TV"
+        assertThat(e).isInstanceOf(AdbError.Unauthorized::class.java) // and then waited for approval, as a real TV does
+    }
+
+    @Test fun aBinderThatFailsIsNeverMistakenForUnauthorized() = runBlocking {
+        val e = runCatching { failingBinder("adb4").connect("127.0.0.1", deadPort(), 2_000) }.exceptionOrNull()
+        assertThat(e).isInstanceOf(AdbError.Refused::class.java)
+    }
+
+    @Test fun aSocketErrorBeforeTheHandshakeIsNotUnauthorized() = runBlocking {
+        // The socket is bound to IPv6 loopback, so connecting it to an IPv4 address fails locally, before any handshake.
+        val v6 = DadbConnector({ AdbKeys.loadOrCreate(File(tmp.root, "adb5"), "test") }, { s -> s.bind(java.net.InetSocketAddress("::1", 0)) })
+        val e = runCatching { v6.connect("127.0.0.1", silentServer(), 2_000) }.exceptionOrNull()
         assertThat(e).isInstanceOf(AdbError::class.java)
+        assertThat(e).isNotInstanceOf(AdbError.Unauthorized::class.java)
     }
 
     @Test fun refusedPortIsRefused() = runBlocking {
