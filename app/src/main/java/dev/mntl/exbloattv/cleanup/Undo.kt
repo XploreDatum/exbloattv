@@ -5,6 +5,7 @@ import dev.mntl.exbloattv.adb.AdbError
 import dev.mntl.exbloattv.safety.SafetyGuard
 import dev.mntl.exbloattv.state.Change
 import dev.mntl.exbloattv.state.ChangeKind
+import dev.mntl.exbloattv.state.TvState
 import dev.mntl.exbloattv.state.TvStateStore
 import dev.mntl.exbloattv.tv.Parsers
 import dev.mntl.exbloattv.tv.TvReadException
@@ -24,11 +25,26 @@ import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 
 /**
- * What "Undo everything" did. [restored]: log entries verifiably put back (and dropped from the log). [failed]: plain
- * names of what could not be put back; it stays logged, so the next Undo tries again. [reinstallFromStore]: packages
- * of deleted apps, which only the Play Store can bring back ([Undo.openInPlayStore]); their entries stay logged.
+ * One logged change Undo could not put back (it stays logged, so the next Undo tries again). [pkg] is null for the
+ * animation speed, for a log entry whose package name is not valid, and for `LAUNCHER_SWAP` meaning "the stock home
+ * screen did not come back". The UI turns it into words.
  */
-data class UndoReport(val restored: Int, val failed: List<String>, val reinstallFromStore: List<String>)
+data class UndoFailure(val pkg: String?, val kind: ChangeKind)
+
+/**
+ * What "Undo everything" did. [restored]: log entries verifiably put back (and dropped from the log). [failed]: one
+ * [UndoFailure] per change that could not be put back, in the order they were met. [reinstallFromStore]: packages of
+ * deleted apps that are still missing; only the Play Store can bring them back ([Undo.openInPlayStore]). Their entries
+ * stay logged until the TV shows the app installed and on again, when the next Undo drops them.
+ */
+data class UndoReport(val restored: Int, val failed: List<UndoFailure>, val reinstallFromStore: List<String>)
+
+/**
+ * Undo stopped partway: the connection was lost, the lock was lost, or the state file could not be read. [partial] is
+ * what had been done (and logged) by then; the rest is still in the log, so the next Undo carries on from there.
+ */
+class UndoInterruptedException(val partial: UndoReport, cause: Throwable) :
+    Exception("Undo stopped before the end: ${cause.message}", cause)
 
 /** The TV could not open the Play Store page (no Play Store, or it refused the request). */
 class PlayStoreOpenException(detail: String) : Exception("Couldn't open the Play Store on the TV: $detail")
@@ -47,10 +63,13 @@ class PlayStoreOpenException(detail: String) : Exception("Couldn't open the Play
  *   [LauncherSwap.recover] then rolls it back: stock launchers and the setup wizard back on, FLauncher removed only if
  *   the swap installed it and a real home screen is back. After everything, HOME is pressed and a real stock home
  *   screen must come to the front.
- * - Deleted user apps (`UNINSTALL`) can't be put back from here: they are listed in [UndoReport.reinstallFromStore].
+ * - Deleted user apps (`UNINSTALL`) can't be put back from here. If the TV shows the app installed and on again (the
+ *   person reinstalled it), the entry is dropped like any verified reversal; if it is missing, it is listed in
+ *   [UndoReport.reinstallFromStore] and its older changes wait for it.
  * - Commands never include unchecked text from the log: package names, scales and app-op modes are validated first.
- * - The run lock is held throughout and refreshed before each reversal. Cancellation is honoured between reversals;
- *   each reversal (command, check, log write) always runs to the end.
+ * - The run lock is held throughout and refreshed before each reversal. If the refreshed log holds anything other than
+ *   what this Undo expects (another phone changed it while this one was away), Undo re-plans from the fresh log.
+ * - Cancellation is honoured between reversals; each reversal (command, check, log write) always runs to the end.
  *
  * [store] must talk to the same TV connection passed to [undoAll].
  */
@@ -64,8 +83,8 @@ class Undo(
     private val launcher by lazy { LauncherSwap(NoDownloads(), store, phone, timeSource, now) }
 
     /**
-     * Throws [dev.mntl.exbloattv.state.TvLockedException] if another phone holds the TV (before anything changes, or
-     * midway if the lock was lost) and [AdbError] if the connection is lost; the log keeps what is left either way.
+     * Throws [dev.mntl.exbloattv.state.TvLockedException] (or a state-file/connection error) if Undo could not start:
+     * nothing was changed. Throws [UndoInterruptedException] if it stopped partway; the log keeps what is left.
      */
     suspend fun undoAll(adb: AdbClient, serial: String): UndoReport {
         val locked = onStore(adb) { store.acquireLock(serial, phone) }.getOrThrow()
@@ -105,65 +124,107 @@ class Undo(
         }
     }
 
-    private suspend fun undoLog(adb: AdbClient, serial: String, log: List<Change>): UndoReport {
+    private suspend fun undoLog(adb: AdbClient, serial: String, start: List<Change>): UndoReport {
+        var log = start
+        /** Ids the log should hold right now: what was read, minus what this Undo dropped. */
+        var expected = start.map { it.id }.toSet()
         var restored = 0
-        val failed = LinkedHashSet<String>()
+        /** By unit (change id or swap id), in the order met; a unit held back before a re-plan may still succeed. */
+        val failures = LinkedHashMap<String, List<UndoFailure>>()
         val reinstall = LinkedHashSet<String>()
-        /** Things with a newer change still logged: their older changes must wait. */
-        val waiting = HashSet<String>()
+        /** Units tried this run and still logged: not tried again after a re-plan. */
+        val tried = HashSet<String>()
         val stockHomes = LinkedHashSet<String>()
-        var swapUndone = false
+        var swapRolledBack = false
+        fun report() = UndoReport(restored, failures.values.flatten(), reinstall.toList())
 
-        for (work in plan(log)) {
-            currentCoroutineContext().ensureActive()
-            val keys = keysOf(work)
-            if (keys.any { it in waiting }) {
-                waiting += keys
-                // A deleted app's older changes wait quietly for it to be reinstalled; it is already listed.
-                if (!(work is One && work.change.pkg in reinstall)) failed += nameOf(work)
-                continue
-            }
-            when (work) {
-                is One -> {
-                    val c = work.change
-                    val pkg = c.pkg
-                    if (c.kind == ChangeKind.UNINSTALL && pkg != null && isPackageName(pkg)) {
-                        reinstall += pkg
+        try {
+            replan@ while (true) {
+                /** Things with a newer change still logged: their older changes must wait. */
+                val waiting = HashSet<String>()
+                for (work in plan(log)) {
+                    currentCoroutineContext().ensureActive()
+                    val id = idOf(work)
+                    val keys = keysOf(work)
+                    if (id in tried) {
                         waiting += keys
                         continue
                     }
-                    refreshLock(adb, serial)
-                    if (withContext(NonCancellable) { undoOne(adb, serial, c) }) {
-                        restored++
-                    } else {
-                        failed += nameOf(work)
+                    if (keys.any { it in waiting }) {
                         waiting += keys
+                        // A missing deleted app's older changes wait quietly for it; it is already listed.
+                        if (!(work is One && work.change.pkg in reinstall)) failures[id] = failuresOf(work)
+                        continue
+                    }
+                    val fresh = refreshLock(adb, serial).changes
+                    if (fresh.map { it.id }.toSet() != expected) {
+                        // Another phone changed the log while this one was away: what is left must be planned again.
+                        log = fresh
+                        expected = fresh.map { it.id }.toSet()
+                        continue@replan
+                    }
+                    failures.remove(id) // held back before a re-plan; tried now
+                    tried += id
+                    when (work) {
+                        is One -> when (withContext(NonCancellable) { undoOne(adb, serial, work.change) }) {
+                            Outcome.RESTORED -> {
+                                restored++
+                                expected = expected - work.change.id
+                            }
+                            Outcome.REINSTALL -> {
+                                reinstall += checkNotNull(work.change.pkg)
+                                waiting += keys
+                            }
+                            Outcome.FAILED -> {
+                                failures[id] = failuresOf(work)
+                                waiting += keys
+                            }
+                        }
+                        is Swap -> {
+                            stockHomes += stockHomesOf(work)
+                            val r = withContext(NonCancellable) { undoSwap(adb, serial, work) }
+                            restored += r.restored
+                            expected = expected - r.removed
+                            if (r.rolledBack) swapRolledBack = true
+                            val f = r.left.map(::failureOf) + listOfNotNull(HOME_NOT_BACK.takeIf { r.rolledBack && !r.homeBack })
+                            if (f.isNotEmpty()) failures[id] = f
+                            waiting += r.left.flatMap(::keysOf)
+                        }
                     }
                 }
-                is Swap -> {
-                    swapUndone = true
-                    stockHomes += stockHomesOf(work)
-                    refreshLock(adb, serial)
-                    val r = withContext(NonCancellable) { undoSwap(adb, serial, work) }
-                    restored += r.restored
-                    if (r.left.isNotEmpty()) {
-                        failed += HOME_SCREEN
-                        waiting += r.left.flatMap(::keysOf)
-                    }
-                }
+                break
             }
+            if (swapRolledBack) {
+                currentCoroutineContext().ensureActive()
+                val back = withContext(NonCancellable) { stockHomeInFront(adb, stockHomes) }
+                // The same failure seen twice (by the rollback and now) is reported once.
+                if (!back && failures.values.none { HOME_NOT_BACK in it }) failures[FINAL_HOME] = listOf(HOME_NOT_BACK)
+            }
+            return report()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw UndoInterruptedException(report(), e)
         }
-        if (swapUndone) {
-            currentCoroutineContext().ensureActive()
-            if (!withContext(NonCancellable) { stockHomeInFront(adb, stockHomes) }) failed += HOME_SCREEN
-        }
-        return UndoReport(restored, failed.toList(), reinstall.toList())
     }
 
-    /** Reverses one change and drops it from the log. False (entry kept) unless the TV confirms it. */
-    private suspend fun undoOne(adb: AdbClient, serial: String, c: Change): Boolean {
-        if (!step { reverse(adb, c) }) return false
-        return step { onStore(adb) { store.removeChanges(serial, setOf(c.id)) }; true }
+    private enum class Outcome { RESTORED, FAILED, REINSTALL }
+
+    /** Reverses one change and drops it from the log. Not [Outcome.RESTORED] (entry kept) unless the TV confirms it. */
+    private suspend fun undoOne(adb: AdbClient, serial: String, c: Change): Outcome {
+        if (c.kind == ChangeKind.UNINSTALL) {
+            val pkg = c.pkg?.takeIf(::isPackageName) ?: return Outcome.FAILED
+            var on = false
+            var missing = false
+            if (!step { on = listed(adb, "-e", pkg); missing = !on && !listed(adb, "", pkg); true }) return Outcome.FAILED
+            if (missing) return Outcome.REINSTALL
+            // Reinstalled but switched off: not as it was, and the Play Store won't help.
+            if (!on) return Outcome.FAILED
+        } else if (!step { reverse(adb, c) }) {
+            return Outcome.FAILED
+        }
+        val logged = step { onStore(adb) { store.removeChanges(serial, setOf(c.id)) }; true }
+        return if (logged) Outcome.RESTORED else Outcome.FAILED
     }
 
     private suspend fun reverse(adb: AdbClient, c: Change): Boolean {
@@ -189,7 +250,7 @@ class Undo(
             }
             ChangeKind.ANIMATIONS -> restoreAnimations(adb, c.from)
             ChangeKind.APPOPS -> pkg != null && restoreAppop(adb, pkg, c.from)
-            // Deleted apps need the Play Store; FLauncher and HOME belong to a swap and are undone with it.
+            // Deleted apps are handled in undoOne; FLauncher and HOME belong to a swap and are undone with it.
             ChangeKind.UNINSTALL, ChangeKind.INSTALL_APK, ChangeKind.LAUNCHER_SWAP -> false
         }
     }
@@ -226,7 +287,17 @@ class Undo(
 
     // --- the home screen ----------------------------------------------------------------------------------
 
-    private class SwapUndo(val restored: Int, val left: List<Change>)
+    /**
+     * [removed]: ids dropped from the log; [left]: the swap's entries still logged; [rolledBack]: LauncherSwap ran its
+     * rollback; [homeBack]: and it saw a real stock home screen come back.
+     */
+    private class SwapUndo(
+        val restored: Int,
+        val removed: Set<String>,
+        val left: List<Change>,
+        val rolledBack: Boolean,
+        val homeBack: Boolean,
+    )
 
     private suspend fun undoSwap(adb: AdbClient, serial: String, swap: Swap): SwapUndo {
         val homeId = "${swap.id}:home"
@@ -236,25 +307,34 @@ class Undo(
             val onTv = mine.filter { it.id != homeId }
             if (onTv.isEmpty()) {
                 // The swap switched nothing off and installed nothing: only its record is left.
-                if (mine.isNotEmpty()) onStore(adb) { store.removeChanges(serial, setOf(homeId)) }
-                return SwapUndo(0, emptyList())
+                if (mine.isEmpty()) return SwapUndo(0, emptySet(), emptyList(), false, false)
+                onStore(adb) { store.removeChanges(serial, setOf(homeId)) }
+                return SwapUndo(0, setOf(homeId), emptyList(), false, false)
             }
             // recover() acts on the newest logged swap; anything else would undo the wrong one.
             if (log.lastOrNull { it.id != homeId && swapIdOf(it) != null }?.let(::swapIdOf) != swap.id) {
-                return SwapUndo(0, mine)
+                return SwapUndo(0, emptySet(), mine, false, false)
             }
             // Without ":home" the swap counts as unfinished; if Undo stops right here, the next recover() (or Undo)
             // still puts it back.
             if (mine.size != onTv.size) onStore(adb) { store.removeChanges(serial, setOf(homeId)) }
-            launcher.recover(adb, serial)
+            val result = launcher.recover(adb, serial)
             val left = onStore(adb) { store.load(serial) }.changes.filter { swapIdOf(it) == swap.id }
-            return SwapUndo(onTv.count { c -> left.none { it.id == c.id } }, left)
+            val removed = mine.map { it.id }.toSet() - left.map { it.id }.toSet()
+            return SwapUndo(
+                restored = onTv.count { it.id in removed },
+                removed = removed,
+                left = left,
+                rolledBack = result is SwapResult.RolledBack,
+                homeBack = result is SwapResult.RolledBack && result.reason.endsWith(ROLLBACK_HOME_BACK),
+            )
         } catch (e: AdbError) {
             throw e
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return SwapUndo(0, swap.entries)
+            // The log may have changed; the next lock refresh notices and re-plans.
+            return SwapUndo(0, emptySet(), swap.entries, false, false)
         }
     }
 
@@ -305,9 +385,9 @@ class Undo(
 
     // --- helpers ------------------------------------------------------------------------------------------
 
-    private suspend fun refreshLock(adb: AdbClient, serial: String) {
+    /** Renews the lock and returns the state it read; throws if another phone holds the TV now. */
+    private suspend fun refreshLock(adb: AdbClient, serial: String): TvState =
         onStore(adb) { store.acquireLock(serial, phone) }.getOrThrow()
-    }
 
     /**
      * One best-effort step: an odd or unreadable answer, or a state-file failure, counts as "not done". A lost
@@ -367,29 +447,28 @@ class Undo(
         is Swap -> work.entries.flatMap(::keysOf)
     }
 
-    private fun nameOf(work: Work): String {
-        val c = (work as? One)?.change ?: return HOME_SCREEN
-        val pkg = c.pkg?.takeIf(::isPackageName)
-        return when {
-            c.kind == ChangeKind.ANIMATIONS -> "Animation speed"
-            c.kind == ChangeKind.LAUNCHER_SWAP || pkg == FLAUNCHER_PKG -> HOME_SCREEN
-            pkg == null -> UNKNOWN
-            c.kind == ChangeKind.APPOPS -> "${plainName(pkg)} (running in the background)"
-            else -> plainName(pkg)
-        }
+    private fun idOf(work: Work) = when (work) {
+        is One -> work.change.id
+        is Swap -> work.id
     }
 
-    /** Same fallback as the cleaning checklist: the last part of the package name, tidied. */
-    private fun plainName(pkg: String) =
-        pkg.substringAfterLast('.').ifBlank { pkg }.replace('_', ' ').replaceFirstChar { it.uppercase() }
+    private fun failureOf(c: Change) = UndoFailure(c.pkg?.takeIf(::isPackageName), c.kind)
+
+    private fun failuresOf(work: Work): List<UndoFailure> = when (work) {
+        is One -> listOf(failureOf(work.change))
+        is Swap -> work.entries.map(::failureOf)
+    }
 
     private class NoDownloads : ApkDownloader(OkHttpClient(), File("")) {
         override suspend fun fetch(url: String, sha256: String): File = throw IOException("Undo never downloads")
     }
 
     private companion object {
-        const val HOME_SCREEN = "Home screen"
-        const val UNKNOWN = "An unrecognised change"
+        /** The stock home screen did not come back. */
+        val HOME_NOT_BACK = UndoFailure(null, ChangeKind.LAUNCHER_SWAP)
+        const val FINAL_HOME = "final-home-check"
+        /** How LauncherSwap's rollback says it saw a real home screen come back (pinned by UndoTest). */
+        const val ROLLBACK_HOME_BACK = "Your old home screen is back"
         const val PLAY_STORE = "com.android.vending"
         const val TV_SETTINGS = "com.android.tv.settings"
         const val SETUPWRAITH = "com.google.android.tungsten.setupwraith"
