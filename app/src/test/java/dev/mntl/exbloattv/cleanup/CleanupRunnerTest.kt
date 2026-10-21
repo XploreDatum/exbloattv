@@ -71,6 +71,10 @@ class CleanupRunnerTest {
     /** The next [hangInstalls] installs never return; a reboot never answers when [hangReboot]. */
     private var hangInstalls = 0
     private var hangReboot = false
+    /** The reboot command is lost: the TV never restarts, and the call never answers. */
+    private var rebootIgnored = false
+    /** Changes on every boot, like the kernel's. */
+    private var bootId = "boot-1"
 
     init {
         tv.installed += listOf(ADS, OTHER, THIRD, GAMES, USERAPP)
@@ -130,6 +134,7 @@ class CleanupRunnerTest {
         }
         if (cmd == "pm trim-caches 999G") return ok("")
         if (cmd == "getprop sys.boot_completed") return ok("1\n")
+        if (cmd == BOOT_ID) return ok("$bootId\n")
         return false
     }
 
@@ -152,6 +157,7 @@ class CleanupRunnerTest {
         override suspend fun pull(remote: String, local: File) = tv.adb.pull(remote, local)
         override suspend fun reboot() {
             tv.adb.reboot()
+            if (rebootIgnored) awaitCancellation()
             tvDown = true
             if (hangReboot) awaitCancellation()
         }
@@ -178,6 +184,7 @@ class CleanupRunnerTest {
             if (tvDown) {
                 if (neverBoots) throw AdbError.Refused()
                 tvDown = false
+                bootId = "boot-${connects}"
                 onBoot()
             }
             Conn()
@@ -457,6 +464,46 @@ class CleanupRunnerTest {
         c.job.cancel()
     }
 
+    @Test fun fallbackHomeIsNotARealHomeScreenSoEveryCandidateIsProtected() = runTest {
+        tv.disabled += STOCK // HOME falls back to the black-screen settings home
+        tv.installed += OTHER_HOME
+        tv.homePriority[OTHER_HOME] = -2000
+
+        val c = start(runner(), listOf(Step.Disable(OTHER_HOME), Step.Disable(ADS)))
+        advanceUntilIdle()
+
+        assertThat(tv.resolvedHome()).isEqualTo(FakeTv.TV_SETTINGS)
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED, DONE))
+        assertThat(tvCommands()).doesNotContain(disableCmd(OTHER_HOME))
+        c.job.cancel()
+    }
+
+    @Test fun setupWizardHoldingHomeIsNotARealHomeScreen() = runTest {
+        tv.homePriority[SETUPWRAITH] = 5
+
+        val c = start(runner(), listOf(Step.Disable(STOCK)))
+        advanceUntilIdle()
+
+        assertThat(tv.resolvedHome()).isEqualTo(SETUPWRAITH)
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED))
+        assertThat(tvCommands()).doesNotContain(disableCmd(STOCK))
+        c.job.cancel()
+    }
+
+    @Test fun emptyHomeScreenListIsAFailedReadNotPermissionToSwitchOff() = runTest {
+        tv.homePriority[FLAUNCHER_PKG] = 1 // tie: HOME shows the chooser
+        tv.installed += FLAUNCHER_PKG
+        afterCommand = { if (it == FakeTv.QUERY_HOME) tv.adb.responses[it] = "0 activities found:\n" }
+
+        val c = start(runner(), listOf(Step.Disable(ADS)))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED))
+        assertThat(c.last.steps[1].message).isEqualTo("Couldn't check the TV (home screen apps). Tap Retry")
+        assertThat(tvCommands()).doesNotContain(disableCmd(ADS))
+        c.job.cancel()
+    }
+
     @Test fun enableThatDoesNotTakeFailsAndLogsNothing() = runTest {
         tv.failingEnables += GAMES
 
@@ -711,6 +758,22 @@ class CleanupRunnerTest {
         resumeAfterAnHour(runner, c)
     }
 
+    @Test fun anotherPhonesInterruptedSwapRolledBackByOurRecoveryDoesNotStopTheRun() = runTest {
+        // Mum's phone switched off the stock home screen and lost the connection before finishing the swap.
+        tv.installed += FLAUNCHER_PKG
+        tv.disabled += STOCK
+        val mumSwap = dev.mntl.exbloattv.state.Change(
+            "swap-5-abcd1234:disable:$STOCK", ChangeKind.DISABLE, STOCK, "enabled", "disabled", "Mum's phone", 5, true,
+        )
+        writeState(TvState(serial = serial, changes = listOf(mumSwap)))
+
+        val last = runner().run(listOf(Step.Disable(ADS), Step.Disable(OTHER)), before()).toList().last()
+
+        assertThat(last.steps.map { it.status }).isEqualTo(List(3) { DONE })
+        assertThat(tv.disabled).doesNotContain(STOCK) // our recovery put Mum's half-done swap back
+        assertThat(state().changes.map { it.pkg }).containsExactly(ADS, OTHER).inOrder()
+    }
+
     @Test fun ourOwnExpiredLockIsTakenBackAndTheRunCarriesOn() = runTest {
         val (runner, c) = pausedOnThird()
         advanceTimeBy(3_600_000)
@@ -794,6 +857,9 @@ class CleanupRunnerTest {
         assertThat(testScheduler.currentTime).isAtLeast(5 * 60_000L)
         assertThat(connects).isEqualTo(2)
         assertThat(tv.resolvedHome()).isEqualTo(FLAUNCHER_PKG)
+        val installs = state().changes.filter { it.kind == ChangeKind.INSTALL_APK }
+        assertThat(installs.map { it.verified }).containsExactly(true)
+        assertThat(state().changes.all { it.verified }).isTrue()
     }
 
     @Test fun rebootThatNeverAnswersCountsAsSent() = runTest {
@@ -804,6 +870,34 @@ class CleanupRunnerTest {
         assertThat(last.steps.map { it.status }).isEqualTo(List(3) { DONE })
         assertThat(tvCommands().count { it == "reboot" }).isEqualTo(1)
         assertThat(state().lock).isNull()
+    }
+
+    @Test fun restartThatNeverHappensIsFailedNotDone() = runTest {
+        rebootIgnored = true
+
+        val c = start(runner(), listOf(Step.Disable(ADS), Step.RebootAndVerify))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, DONE, FAILED))
+        assertThat(c.last.steps[2].message).isEqualTo("The TV didn't restart. Tap Retry.")
+        assertThat(c.seen.none { it.steps[2].status == DONE }).isTrue()
+        c.job.cancel()
+    }
+
+    @Test fun retryAfterARestartThatDidNotHappenRestartsAgain() = runTest {
+        rebootIgnored = true
+        val runner = runner()
+        val c = start(runner, listOf(Step.Disable(ADS), Step.RebootAndVerify))
+        advanceUntilIdle()
+        assertThat(c.statuses[2]).isEqualTo(FAILED)
+
+        rebootIgnored = false
+        runner.retry(2)
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, DONE, DONE))
+        assertThat(tvCommands().count { it == "reboot" }).isEqualTo(2)
+        assertThat(c.job.isCompleted).isTrue()
     }
 
     @Test fun swapUndoneByALaterRecoveryIsShownFailedRightAway() = runTest {
@@ -868,6 +962,8 @@ class CleanupRunnerTest {
         const val MUSIC = "com.example.music"
         const val USERAPP = "com.example.userapp"
         const val NETFLIX = "com.netflix.ninja"
+        const val OTHER_HOME = "com.example.otherhome"
         const val MANUFACTURER = "getprop ro.product.manufacturer"
+        const val BOOT_ID = "cat /proc/sys/kernel/random/boot_id"
     }
 }

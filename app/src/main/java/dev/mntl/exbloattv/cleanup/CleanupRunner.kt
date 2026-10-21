@@ -137,8 +137,15 @@ class CleanupRunner(
         private var needsRecover = false
         /** Write-ahead entries whose outcome on the TV is not known yet, by step index ("3", or "3:<op>" for app-ops). */
         private val inflight = mutableMapOf<String, Change>()
-        /** Changes by other phones when this run took the lock; any difference later means the TV changed under us. */
+        /**
+         * Other phones' change ids as of our last write that could touch them; any difference later means the TV
+         * changed under us. Only LauncherSwap's recover/rollback ever removes another phone's entries (the runner's
+         * own writes touch only its own ids), so it is re-taken after each LauncherSwap call. Not re-taken at the end
+         * of every step, which would silently absorb another phone writing during that step.
+         */
         private var foreignAtStart: Set<String>? = null
+        /** A LauncherSwap call was cut off, so what it removed is unknown: take a new snapshot at the next check. */
+        private var foreignDirty = false
         /** Ids of changes this run verified; another phone's Undo removes them. */
         private val confirmedIds = mutableSetOf<String>()
         /** Set once another phone changed the TV mid-run: the plan is stale, nothing more may run. */
@@ -146,8 +153,13 @@ class CleanupRunner(
         private val verifiedDisabled = linkedSetOf<String>()
         private val verifiedRemoved = linkedSetOf<String>()
         private var swapDone = false
-        /** RebootAndVerify steps whose restart already happened (a retry then only checks). */
+        /** RebootAndVerify steps whose restart is confirmed (a retry then only checks). */
         private val rebooted = mutableSetOf<Int>()
+        /**
+         * boot_id read before a restart was requested, kept until the restart is confirmed or ruled out: after a lost
+         * connection or a TV that came back late, the retry compares instead of restarting again.
+         */
+        private val bootBefore = mutableMapOf<Int, String>()
 
         suspend fun execute() {
             try {
@@ -358,12 +370,19 @@ class CleanupRunner(
          * LauncherSwap reads the TV (packages, HOME) as it goes; when one of those reads fails, what the swap did is
          * unknown. That is retried like a lost connection (reconnect, [LauncherSwap.recover], same step), never DONE.
          */
-        private suspend fun <T> swapCall(block: suspend () -> T): T =
+        private suspend fun <T> swapCall(block: suspend () -> T): T {
+            var settled = false
             try {
-                block()
+                val r = block()
+                foreignAtStart = foreignIds(store.load(serial))
+                settled = true
+                return r
             } catch (e: TvReadException) {
                 throw SwapStateUnknown(e)
+            } finally {
+                if (!settled) foreignDirty = true
             }
+        }
 
         // --- steps --------------------------------------------------------------------------------------------
 
@@ -411,6 +430,12 @@ class CleanupRunner(
             val lock = s.lock
             if (lock != null && lock.byPhone != phone && now() - lock.at < TvStateStore.LOCK_EXPIRY_MS) {
                 throw TvLockedException(lock.byPhone, lock.at)
+            }
+            if (foreignDirty) {
+                // Our interrupted recovery may have removed another phone's swap entries. The lock check below still
+                // catches any other phone that worked on the TV meanwhile (it must have taken and released our lock).
+                foreignAtStart = foreignIds(s)
+                foreignDirty = false
             }
             if (!stale) {
                 stale = lock?.byPhone != phone ||
@@ -614,7 +639,15 @@ class CleanupRunner(
         /** Spec §6.11: restart, reconnect, check the home screen, and that everything this run switched off stayed off. */
         private suspend fun rebootAndVerify(i: Int): Outcome {
             if (i !in rebooted) {
-                adopt(swap.rebootAndReconnect(checkNotNull(adb), reconnect = { open() }))
+                // boot_id changes on every boot: the only proof the restart really happened. A reboot command that
+                // never reached the TV would otherwise "reconnect" to the same running TV and pass every check.
+                val before = bootBefore[i] ?: bootId(checkNotNull(adb)).also {
+                    bootBefore[i] = it
+                    adopt(swap.rebootAndReconnect(checkNotNull(adb), reconnect = { open() }))
+                }
+                val after = bootId(checkNotNull(adb))
+                bootBefore.remove(i) // either way, a retry starts with a fresh restart
+                if (after == before) return Outcome.Failed(NO_RESTART)
                 rebooted += i
             }
             val adb = checkNotNull(adb)
@@ -685,16 +718,18 @@ class CleanupRunner(
 
         /**
          * SafetyGuard plus the home screen, read right now. Fails closed: if HOME doesn't resolve to one real package
-         * (the chooser, or nothing), every HOME-capable package is protected.
+         * (nothing, the chooser, the black-screen fallback home or the setup wizard), every HOME-capable package is
+         * protected; an empty list of them is a failed read, never "nothing to protect".
          */
         private suspend fun isProtected(adb: AdbClient, pkg: String): Boolean {
             if (SafetyGuard.isProtected(pkg)) return true
             val home = Parsers.resolveActivityBrief(read(adb, "current home screen", RESOLVE_HOME))?.substringBefore('/')
-            if (home != null && home != "android") return pkg == home
-            return pkg in Parsers.queryActivitiesPackages(read(adb, "home screen apps", QUERY_HOME))
+            if (home != null && home !in NOT_A_REAL_HOME) return pkg == home
+            val candidates = Parsers.queryActivitiesPackages(read(adb, "home screen apps", QUERY_HOME))
+            if (candidates.isEmpty()) throw TvReadException("home screen apps", "none found")
+            return pkg in candidates
         }
 
-        /** Same rule as the inventory: only the literal "null" (never set) means the default 1.0. */
         /** The raw answer ("null" = never set); anything that isn't "null" or a number is a failed read. */
         private suspend fun rawScale(adb: AdbClient, key: String): String {
             val text = read(adb, "animation settings", "settings get global $key").trim()
@@ -711,13 +746,17 @@ class CleanupRunner(
             Parsers.appop(read(adb, "background setting", "cmd appops get $pkg $op"), op) ?: "default"
 
         private fun joined(values: List<String>) = values.joinToString(",")
+
+        private suspend fun bootId(adb: AdbClient): String =
+            read(adb, "restart check", BOOT_ID).trim().ifEmpty { throw TvReadException("restart check", "empty boot id") }
     }
 
     /**
      * Bounds every call to the TV: a read on a wedged connection (the TV left the Wi-Fi without closing TCP) can't
      * be cancelled, only ended by closing the socket. On timeout the connection is closed and [AdbError.Timeout]
      * thrown (the runner then reconnects), except for [reboot]: a reboot command that never answers is taken as
-     * sent, and the caller's "is it still up?" probe on the now-closed connection decides.
+     * sent. Closing the connection makes LauncherSwap's "is it still up?" probe answer "gone" even if the command
+     * never reached the TV, so that probe proves nothing; the runner compares the TV's boot_id before and after.
      */
     private class TimedAdbClient(private val inner: AdbClient) : AdbClient by inner {
         override suspend fun shell(cmd: String): ShellResult = bounded(SHELL_TIMEOUT_MS) { inner.shell(cmd) }
@@ -762,6 +801,10 @@ class CleanupRunner(
             "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME"
         const val QUERY_HOME =
             "cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.HOME"
+        /** Never "the" home screen (mirrors LauncherSwap): chooser, fallback home, setup wizard. */
+        val NOT_A_REAL_HOME = setOf("android", "com.android.tv.settings", "com.google.android.tungsten.setupwraith")
+        const val BOOT_ID = "cat /proc/sys/kernel/random/boot_id"
+        const val NO_RESTART = "The TV didn't restart. Tap Retry."
         const val CHANGED_ELSEWHERE =
             "This TV was changed from another phone while you were away. Check the TV again before carrying on"
         const val LOST = "Lost connection to the TV. Check it's on and on the same Wi-Fi, then tap Retry"
