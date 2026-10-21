@@ -77,6 +77,28 @@ object Parsers {
     fun resumedPackage(text: String): String? =
         Regex("""[rR]esumedActivity[:=]\s*ActivityRecord\{[^}]*? u\d+ ([^/\s]+)/""").find(text)?.groupValues?.get(1)
 
+    private fun recordPackage(prefix: String) =
+        Regex("""^\s*${Regex.escape(prefix)}\s*ActivityRecord\{[^}]*? u\d+ ([^/\s]+)/""", RegexOption.MULTILINE)
+
+    private val topResumed = recordPackage("topResumedActivity=")
+    private val focusedResumed = recordPackage("ResumedActivity:")
+    private val stackResumed = recordPackage("mResumedActivity:")
+
+    /**
+     * The package in front, from `dumpsys activity activities`. Unlike [resumedPackage] this never reads
+     * `mLastResumedActivity`/`mLastPausedActivity` or another display: it takes `topResumedActivity=`
+     * (Android 10+, the focused display), else the focused `ResumedActivity:` (Android 9 and earlier), else the
+     * first `mResumedActivity:` inside the `Display #0` section (or the whole text when there are no sections).
+     */
+    fun foregroundPackage(text: String): String? {
+        topResumed.find(text)?.let { return it.groupValues[1] }
+        focusedResumed.find(text)?.let { return it.groupValues[1] }
+        val lines = text.lines()
+        val start = lines.indexOfFirst { it.trim().startsWith("Display #0") }
+        val display0 = if (start < 0) lines else lines.drop(start + 1).takeWhile { !it.trim().startsWith("Display #") }
+        return stackResumed.find(display0.joinToString("\n"))?.groupValues?.get(1)
+    }
+
     fun appop(text: String, op: String): String? =
         Regex("""^\s*${Regex.escape(op)}:\s*(\w+)""", RegexOption.MULTILINE).find(text)?.groupValues?.get(1)
 

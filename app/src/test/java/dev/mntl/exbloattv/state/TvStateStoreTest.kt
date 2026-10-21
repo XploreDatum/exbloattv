@@ -139,6 +139,22 @@ class TvStateStoreTest {
         assertEquals(listOf("1", "2", "3"), r { store.load(serial) }.changes.map { it.id })
     }
 
+    @Test fun removeChangesDropsOnlyThoseIdsAndKeepsLock() {
+        r { store.acquireLock(serial, "Pixel 8") }
+        listOf("1", "2", "3").forEach { r { store.appendChange(serial, change(it)) } }
+        r { store.removeChanges(serial, setOf("2", "missing")) }
+        val s = r { store.load(serial) }
+        assertEquals(listOf("1", "3"), s.changes.map { it.id })
+        assertEquals("Pixel 8", s.lock?.byPhone)
+    }
+
+    @Test fun removeChangesWithNothingToRemoveWritesNothing() {
+        r { store.appendChange(serial, change("1")) }
+        fake.log.clear()
+        r { store.removeChanges(serial, setOf("nope")) }
+        assertEquals(listOf("cat $file"), fake.log)
+    }
+
     @Test fun corruptedFileIsKeptAndStateStartsFresh() {
         fs[file] = "{not json"
         clock = 42

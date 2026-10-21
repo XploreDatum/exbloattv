@@ -106,4 +106,92 @@ class ParsersTest {
         assertThat(Parsers.isPmError("Error: java.lang.SecurityException")).isTrue()
         assertThat(Parsers.isPmError("Success")).isFalse()
     }
+
+    // Android 9 (Mi Box 4) `dumpsys activity activities`, trimmed. Stale/other lines name other apps on purpose.
+    private val android9Dump = """
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #0 (activities from top to bottom):
+
+  Stack #1: type=home mode=fullscreen
+  isSleeping=false
+  mBounds=Rect(0, 0 - 0, 0)
+    Task id #1690
+      * TaskRecord{9e2b1c7 #1690 A=me.efesser.flauncher U=0 StackId=1 sz=1}
+        * Hist #0: ActivityRecord{cc36645 u0 me.efesser.flauncher/.MainActivity t1690}
+    Running activities (most recent first):
+      TaskRecord{9e2b1c7 #1690 A=me.efesser.flauncher U=0 StackId=1 sz=1}
+        Run #0: ActivityRecord{cc36645 u0 me.efesser.flauncher/.MainActivity t1690}
+    mResumedActivity: ActivityRecord{cc36645 u0 me.efesser.flauncher/.MainActivity t1690}
+    mLastPausedActivity: ActivityRecord{5d1a2b0 u0 com.netflix.ninja/.MainActivity t1689}
+
+  Stack #0: type=standard mode=fullscreen
+    Running activities (most recent first):
+      TaskRecord{1c2d3e4 #1689 A=com.netflix.ninja U=0 StackId=0 sz=1}
+        Run #0: ActivityRecord{5d1a2b0 u0 com.netflix.ninja/.MainActivity t1689}
+
+ mLastResumedActivity: ActivityRecord{5d1a2b0 u0 com.netflix.ninja/.MainActivity t1689}
+ ResumedActivity: ActivityRecord{cc36645 u0 me.efesser.flauncher/.MainActivity t1690}
+ mFocusedStack=ActivityStack{a1b2c3d stackId=1 type=home mode=fullscreen visible=true translucent=false, 1 tasks} mLastFocusedStack=ActivityStack{a1b2c3d stackId=1 type=home mode=fullscreen visible=true translucent=false, 1 tasks}
+ mSleepTimeout=false
+ mCurTaskIdForUser={0=1690}
+ mUserStackInFront={}
+""".trimIndent()
+
+    // Android 12-style dump with a second display; the focused one is display 0 (topResumedActivity).
+    private val android12MultiDisplayDump = """
+ACTIVITY MANAGER ACTIVITIES (dumpsys activity activities)
+Display #2 (activities from top to bottom):
+  * Task{77aa11 #12 type=standard A=10101:com.example.cast U=0 visible=true mode=fullscreen translucent=false sz=1}
+    mResumedActivity: ActivityRecord{3f3f3f3 u0 com.example.cast/.Presentation t12}
+    * Hist #0: ActivityRecord{3f3f3f3 u0 com.example.cast/.Presentation t12}
+
+  Resumed activities in task display areas (from top to bottom):
+    Resumed: ActivityRecord{3f3f3f3 u0 com.example.cast/.Presentation t12}
+
+Display #0 (activities from top to bottom):
+  * Task{8bb0c1 #1 type=home ?? U=0 visible=true mode=fullscreen translucent=false sz=1}
+    mResumedActivity: ActivityRecord{a8e1d2c u0 com.google.android.tvlauncher/.MainActivity t1}
+    mLastPausedActivity: ActivityRecord{1b2c3d4 u0 com.netflix.ninja/.MainActivity t40}
+    * Hist #0: ActivityRecord{a8e1d2c u0 com.google.android.tvlauncher/.MainActivity t1}
+
+  Resumed activities in task display areas (from top to bottom):
+    Resumed: ActivityRecord{a8e1d2c u0 com.google.android.tvlauncher/.MainActivity t1}
+
+  mLastResumedActivity: ActivityRecord{1b2c3d4 u0 com.netflix.ninja/.MainActivity t40}
+  ResumedActivity: ActivityRecord{3f3f3f3 u0 com.example.cast/.Presentation t12}
+  mFocusedApp=ActivityRecord{a8e1d2c u0 com.google.android.tvlauncher/.MainActivity t1}
+  topDisplayFocusedRootTask=Task{8bb0c1 #1 type=home ?? U=0 visible=true mode=fullscreen translucent=false sz=1}
+  mLastPausedActivity: ActivityRecord{1b2c3d4 u0 com.netflix.ninja/.MainActivity t40}
+  topResumedActivity=ActivityRecord{a8e1d2c u0 com.google.android.tvlauncher/.MainActivity t1}
+""".trimIndent()
+
+    @Test fun foregroundPackageAndroid9FixtureAndFullDump() {
+        assertThat(Parsers.foregroundPackage(fx("resumed_activity.txt"))).isEqualTo("me.efesser.flauncher")
+        assertThat(Parsers.foregroundPackage(android9Dump)).isEqualTo("me.efesser.flauncher")
+    }
+
+    @Test fun foregroundPackagePrefersTopResumedActivityOnMultiDisplay() {
+        assertThat(Parsers.foregroundPackage(android12MultiDisplayDump)).isEqualTo("com.google.android.tvlauncher")
+    }
+
+    @Test fun foregroundPackageUsesDisplay0WhenNoFocusedLine() {
+        // Strip the focused-activity lines: the answer must come from display 0, not the first display listed.
+        val noFocus = android12MultiDisplayDump.lineSequence()
+            .filterNot { it.trim().startsWith("topResumedActivity=") || it.trim().startsWith("ResumedActivity:") }
+            .joinToString("\n")
+        assertThat(Parsers.foregroundPackage(noFocus)).isEqualTo("com.google.android.tvlauncher")
+    }
+
+    @Test fun foregroundPackageIgnoresLastAndPausedLines() {
+        val onlyStale = """
+            mLastResumedActivity: ActivityRecord{1 u0 com.netflix.ninja/.MainActivity t4}
+            mLastPausedActivity: ActivityRecord{1 u0 com.netflix.ninja/.MainActivity t4}
+            mTopResumedActivity=ActivityRecord{1 u0 com.netflix.ninja/.MainActivity t4}
+            mResumedActivity: null
+        """.trimIndent()
+        assertThat(Parsers.foregroundPackage(onlyStale)).isNull()
+        assertThat(Parsers.foregroundPackage("")).isNull()
+        assertThat(Parsers.foregroundPackage("topResumedActivity=null\n  mResumedActivity: ActivityRecord{2 u10 com.a.b/.X t1}"))
+            .isEqualTo("com.a.b")
+    }
 }

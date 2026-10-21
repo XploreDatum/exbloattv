@@ -63,6 +63,13 @@ class TvStateStore(
         saveLocked(state.copy(changes = state.changes + change))
     }
 
+    /** Drops the changes with these ids (e.g. a rolled-back step), keeping everything else; writes only if one matched. */
+    suspend fun removeChanges(serial: String, ids: Set<String>) = mutex.withLock {
+        val state = loadLocked(serial)
+        val kept = state.changes.filterNot { it.id in ids }
+        if (kept.size != state.changes.size) saveLocked(state.copy(changes = kept))
+    }
+
     suspend fun setOriginalIfAbsent(serial: String, rp: RestorePoint) = mutex.withLock {
         val state = loadLocked(serial)
         if (state.original == null) saveLocked(state.copy(original = rp))

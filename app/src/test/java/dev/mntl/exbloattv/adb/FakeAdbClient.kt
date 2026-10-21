@@ -14,6 +14,7 @@ import java.io.File
  * - `onCommand` runs after a shell command is logged and before its response is read, so a test can
  *   mutate `responses` to simulate TV state changing (the command's own response then reflects the change).
  * - `installResult`, `pushFiles`/`pullContent` let tests script install/push/pull; `reboot` just logs.
+ * - `onInstall` runs after an install is logged, so a test can make the package appear on the TV.
  */
 class FakeAdbClient(
     val responses: MutableMap<String, String> = mutableMapOf(),
@@ -23,6 +24,7 @@ class FakeAdbClient(
     val exitCodes: MutableMap<String, Int> = mutableMapOf()
     var onCommand: (String) -> Unit = {}
     var installResult: ShellResult = ShellResult("Success", 0)
+    var onInstall: (File) -> Unit = {}
     /** Remote path -> bytes written by [push]. */
     val pushed: MutableMap<String, ByteArray> = mutableMapOf()
     /** Remote path -> bytes served by [pull]. */
@@ -45,6 +47,7 @@ class FakeAdbClient(
 
     override suspend fun install(apk: File): ShellResult {
         log += "install:${apk.name}"
+        onInstall(apk)
         return installResult
     }
 
