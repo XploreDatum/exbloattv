@@ -35,6 +35,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dev.mntl.exbloattv.R
+import dev.mntl.exbloattv.data.ActiveJob
 import dev.mntl.exbloattv.data.RememberedTv
 import dev.mntl.exbloattv.discovery.PortProbe
 import dev.mntl.exbloattv.service.WorkState
@@ -51,7 +52,10 @@ import kotlinx.coroutines.launch
 enum class Reach { CHECKING, READY, AWAY }
 
 /** Remembered TVs, each with a quick "is it on the Wi-Fi with debugging on" check. */
-class HomeViewModel(tvs: Flow<List<RememberedTv>>, private val probe: PortProbe) : ViewModel() {
+class HomeViewModel(tvs: Flow<List<RememberedTv>>, activeJob: Flow<ActiveJob?>, private val probe: PortProbe) : ViewModel() {
+    /** A recorded job; when nothing runs in this app, it was cut off (the app was killed mid-run). */
+    val activeJob: StateFlow<ActiveJob?> = activeJob.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     /** null until DataStore has answered (so an empty list really means "no TVs yet"). */
     val tvs: StateFlow<List<RememberedTv>?> = tvs.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
@@ -81,6 +85,7 @@ fun HomeScreen(
 ) {
     val tvs by vm.tvs.collectAsStateWithLifecycle()
     val reach by vm.reach.collectAsStateWithLifecycle()
+    val activeJob by vm.activeJob.collectAsStateWithLifecycle()
     LaunchedEffect(tvs) {
         val list = tvs ?: return@LaunchedEffect
         if (list.isEmpty() && work is WorkState.Idle) onEmpty() else vm.check(list)
@@ -88,7 +93,12 @@ fun HomeScreen(
     ExScreen(onBack = null, actions = { PrimaryButton(stringResource(R.string.home_add_tv), onClick = onAddTv) }) {
         ScreenTitle(stringResource(R.string.home_title))
         Supporting(stringResource(R.string.home_subtitle))
-        WorkBanner(work, onOpenWork)
+        val cutOff = activeJob?.takeIf { work is WorkState.Idle }
+        if (cutOff != null) {
+            Banner(stringResource(R.string.home_interrupted, cutOff.tvName)) { onOpenTv(cutOff.serial) }
+        } else {
+            WorkBanner(work, onOpenWork)
+        }
         tvs.orEmpty().sortedByDescending { it.lastCleanedAt ?: 0 }.forEach { tv ->
             TvCard(tv, reach[tv.serial] ?: Reach.CHECKING, onClick = { onOpenTv(tv.serial) })
         }
@@ -104,6 +114,11 @@ private fun WorkBanner(work: WorkState, onOpen: (WorkState) -> Unit) {
         is WorkState.CleanupStopped -> stringResource(R.string.home_result_ready, work.tvName)
         else -> return
     }
+    Banner(text) { onOpen(work) }
+}
+
+@Composable
+private fun Banner(text: String, onOpen: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -114,7 +129,7 @@ private fun WorkBanner(work: WorkState, onOpen: (WorkState) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-        TextButton(onClick = { onOpen(work) }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
+        TextButton(onClick = onOpen, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) {
             Text(stringResource(R.string.home_see))
         }
     }

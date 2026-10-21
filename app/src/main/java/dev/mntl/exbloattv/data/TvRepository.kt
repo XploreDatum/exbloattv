@@ -34,6 +34,18 @@ data class SavedChoices(
     val newHomeScreen: Boolean = true,
 )
 
+/** A cleanup or undo that was running; still present after the app restarts means it was cut off. */
+@Serializable
+data class ActiveJob(
+    val serial: String,
+    val kind: Kind,
+    val startedAt: Long,
+    val tvName: String,
+    val host: String,
+) {
+    enum class Kind { CLEAN, UNDO }
+}
+
 private val Context.tvStore: DataStore<Preferences> by preferencesDataStore(name = "tvs")
 
 /** Remembered TVs, last choices per TV and this phone's identity, kept in DataStore. */
@@ -68,6 +80,26 @@ class TvRepository(private val store: DataStore<Preferences>, private val model:
             prefs[TVS] = encode(decodeTvs(prefs[TVS]).filterNot { it.serial == serial })
             prefs.remove(choicesKey(serial))
         }
+    }
+
+    /** The job running now, or one the app was killed in the middle of (when nothing is running). */
+    val activeJob: Flow<ActiveJob?> = store.data.map { prefs ->
+        prefs[ACTIVE_JOB]?.let { runCatching { json.decodeFromString(ActiveJob.serializer(), it) }.getOrNull() }
+    }
+
+    suspend fun setActiveJob(job: ActiveJob) {
+        store.edit { it[ACTIVE_JOB] = json.encodeToString(ActiveJob.serializer(), job) }
+    }
+
+    suspend fun clearActiveJob() {
+        store.edit { it.remove(ACTIVE_JOB) }
+    }
+
+    /** Whether "Nearby devices" was asked for once already (never ask twice). */
+    suspend fun nearbyAsked(): Boolean = store.data.first()[NEARBY_ASKED] == "1"
+
+    suspend fun setNearbyAsked() {
+        store.edit { it[NEARBY_ASKED] = "1" }
     }
 
     suspend fun saveChoices(serial: String, choices: SavedChoices) {
@@ -107,5 +139,7 @@ class TvRepository(private val store: DataStore<Preferences>, private val model:
     private companion object {
         val TVS = stringPreferencesKey("remembered_tvs")
         val INSTALL_ID = stringPreferencesKey("install_id")
+        val ACTIVE_JOB = stringPreferencesKey("active_job")
+        val NEARBY_ASKED = stringPreferencesKey("nearby_asked")
     }
 }

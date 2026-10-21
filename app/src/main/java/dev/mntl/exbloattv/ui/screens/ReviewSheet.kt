@@ -31,7 +31,13 @@ fun ReviewSheet(
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 16.dp).navigationBarsPadding()) {
             Text(stringResource(R.string.review_title), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 12.dp))
             val lines = buildList {
-                if (review.switchOff > 0) add(pluralStringResource(R.plurals.review_switch_off, review.switchOff, review.switchOff))
+                // The new home screen also switches off the old one; say so, so the count on "All clean" adds up.
+                when {
+                    review.switchOff > 0 && review.newHomeScreen ->
+                        add(pluralStringResource(R.plurals.review_switch_off_plus_home, review.switchOff, review.switchOff))
+                    review.switchOff > 0 -> add(pluralStringResource(R.plurals.review_switch_off, review.switchOff, review.switchOff))
+                    review.newHomeScreen -> add(stringResource(R.string.review_old_home_off))
+                }
                 if (review.remove > 0) {
                     add(
                         pluralStringResource(

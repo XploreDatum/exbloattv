@@ -5,6 +5,9 @@ import dev.mntl.exbloattv.adb.AdbConnector
 import dev.mntl.exbloattv.adb.AdbError
 import dev.mntl.exbloattv.cleanup.ApkDownloader
 import dev.mntl.exbloattv.cleanup.CleanupRunner
+import dev.mntl.exbloattv.cleanup.FakeTv
+import dev.mntl.exbloattv.data.ActiveJob
+import kotlinx.coroutines.awaitCancellation
 import dev.mntl.exbloattv.cleanup.UndoFailure
 import dev.mntl.exbloattv.cleanup.UndoReport
 import dev.mntl.exbloattv.state.ChangeKind
@@ -89,6 +92,64 @@ class CleanupWorkTest {
         work.acknowledge("S")
         assertEquals(WorkState.Idle, work.state.value)
         appScope.cancel()
+    }
+
+    private class Journal : JobJournal {
+        val events = mutableListOf<String>()
+        override suspend fun started(job: ActiveJob) { events += "started ${job.kind} ${job.serial}" }
+        override suspend fun ended() { events += "ended" }
+    }
+
+    @Test fun theRunningJobIsRecordedAndClearedEvenWhenCancelled() = runTest {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val journal = Journal()
+        val work = CleanupWork(
+            connector = offTv,
+            phoneName = { "Pixel · ab12" },
+            swapFor = { store, phone -> LauncherSwap(ApkDownloader(OkHttpClient(), File("build/tmp-apk")), store, phone) },
+            appScope = appScope,
+            journal = journal,
+        )
+        work.startCleanup(request())
+        advanceUntilIdle()
+        assertEquals(listOf("started CLEAN MIBOX-SERIAL"), journal.events)
+        appScope.cancel() // e.g. the system stopped the service
+        advanceUntilIdle()
+        assertEquals(listOf("started CLEAN MIBOX-SERIAL", "ended"), journal.events)
+        assertTrue(work.state.value is WorkState.CleanupStopped)
+    }
+
+    @Test fun stoppedWhileMeasuringAfterEveryStepStillCountsAsCleaned() = runTest {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val tv = FakeTv()
+        var connects = 0
+        val connector = object : AdbConnector {
+            override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient {
+                if (connects++ == 0) return tv.adb
+                awaitCancellation() // the TV doesn't answer the "after" read
+            }
+        }
+        var cleanedAt: Long? = null
+        val work = CleanupWork(
+            connector = connector,
+            phoneName = { "Pixel · ab12" },
+            swapFor = { store, phone -> LauncherSwap(ApkDownloader(OkHttpClient(), File("build/tmp-apk")), store, phone) },
+            appScope = appScope,
+            onCleaned = { _, at -> cleanedAt = at },
+            now = { testScheduler.currentTime },
+        )
+        val inv = MiBoxFixture.inventory()
+        work.startCleanup(CleanupRequest(inv.info.serial, "h", "Mi Box 4", emptyList(), inv, emptyMap()))
+        advanceUntilIdle()
+        val measuring = work.state.value as WorkState.Cleaning
+        assertTrue(measuring.measuring)
+        appScope.cancel()
+        advanceUntilIdle()
+        val done = work.state.value as WorkState.Cleaned
+        assertEquals(null, done.summary.memoryFreedKb)
+        assertEquals(null, done.summary.switchedOff)
+        assertFalse(done.summary.measuredAfterRestart)
+        assertTrue(cleanedAt != null)
     }
 
     @Test fun changedElsewhereIsRecognised() {

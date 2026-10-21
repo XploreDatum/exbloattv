@@ -46,10 +46,15 @@ import dev.mntl.exbloattv.cleanup.Step
 import dev.mntl.exbloattv.cleanup.StepState
 import dev.mntl.exbloattv.cleanup.StepStatus
 import dev.mntl.exbloattv.cleanup.appName
+import dev.mntl.exbloattv.data.ActiveJob
 import dev.mntl.exbloattv.service.CleanupWork
 import dev.mntl.exbloattv.service.WorkState
 import dev.mntl.exbloattv.service.isChangedElsewhere
 import dev.mntl.exbloattv.ui.components.PrimaryButton
+import dev.mntl.exbloattv.ui.components.QuietButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 
 enum class LineKind(@StringRes val title: Int, @StringRes val sub: Int? = null, val counted: Boolean = false) {
@@ -127,8 +132,14 @@ fun CleaningScreen(
     onDone: () -> Unit,
     onHome: () -> Unit,
     onRecheck: () -> Unit,
+    /** A job recorded for this TV that no longer runs (the app was killed mid-run). */
+    interrupted: ActiveJob?,
+    onOpenTv: () -> Unit,
+    onUndo: (host: String, tvName: String) -> Unit,
+    onAcknowledge: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
+    var confirmUndo by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(work) {
         if (work is WorkState.Cleaned && work.serial == serial) onDone()
     }
@@ -139,17 +150,40 @@ fun CleaningScreen(
                 onRecheck()
             }
         })
-        work is WorkState.CleanupStopped && work.serial == serial -> ExScreen(
-            onBack = onHome,
-            actions = { PrimaryButton(stringResource(R.string.cleaning_back_home), onClick = onHome) },
-        ) {
-            ScreenTitle(stringResource(R.string.cleaning_stopped_title))
-            Supporting(stringResource(R.string.cleaning_stopped_body))
-            work.progress?.let { Checklist(it, work.appNames, actions = null) }
+        work is WorkState.CleanupStopped && work.serial == serial -> {
+            ExScreen(
+                onBack = { onAcknowledge(); onHome() },
+                actions = {
+                    PrimaryButton(stringResource(R.string.cleaning_check_again), onClick = { onAcknowledge(); onRecheck() })
+                    QuietButton(stringResource(R.string.done_undo), onClick = { confirmUndo = true })
+                },
+            ) {
+                ScreenTitle(stringResource(R.string.cleaning_stopped_title))
+                Supporting(stringResource(R.string.cleaning_stopped_body))
+                work.progress?.let { Checklist(it, work.appNames, actions = null) }
+                VSpace(8)
+                QuietButton(stringResource(R.string.cleaning_back_home), onClick = { onAcknowledge(); onHome() })
+            }
+            if (confirmUndo) {
+                UndoConfirmSheet(onDismiss = { confirmUndo = false }, onConfirm = {
+                    confirmUndo = false
+                    onUndo(work.host, work.tvName)
+                })
+            }
         }
-        else -> ExScreen(onBack = onHome, actions = { PrimaryButton(stringResource(R.string.cleaning_back_home), onClick = onHome) }) {
+        else -> ExScreen(
+            onBack = onHome,
+            actions = {
+                if (interrupted != null && !work.busy) PrimaryButton(stringResource(R.string.cleaning_open_tv), onClick = onOpenTv)
+                QuietButton(stringResource(R.string.cleaning_back_home), onClick = onHome)
+            },
+        ) {
             ScreenTitle(stringResource(R.string.cleaning_title))
-            Supporting(stringResource(R.string.cleaning_not_running))
+            if (interrupted != null && !work.busy) {
+                InterruptedNote(interrupted.kind)
+            } else {
+                Supporting(stringResource(R.string.cleaning_not_running))
+            }
         }
     }
 }

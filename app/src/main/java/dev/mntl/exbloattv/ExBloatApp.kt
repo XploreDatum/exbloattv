@@ -7,12 +7,14 @@ import dev.mntl.exbloattv.catalog.Catalog
 import dev.mntl.exbloattv.catalog.Categorizer
 import dev.mntl.exbloattv.cleanup.ApkDownloader
 import dev.mntl.exbloattv.cleanup.LauncherSwap
+import dev.mntl.exbloattv.data.ActiveJob
 import dev.mntl.exbloattv.data.ApkArchiveParser
 import dev.mntl.exbloattv.data.TvRepository
 import dev.mntl.exbloattv.data.TvSession
 import dev.mntl.exbloattv.discovery.Discovery
 import dev.mntl.exbloattv.service.CleanupService
 import dev.mntl.exbloattv.service.CleanupWork
+import dev.mntl.exbloattv.service.JobJournal
 import dev.mntl.exbloattv.service.Notifications
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -52,6 +54,10 @@ class AppGraph(app: Application) {
         swapFor = { store, phone -> LauncherSwap(downloader, store, phone) },
         appScope = scope,
         onCleaned = { serial, at -> repository.markCleaned(serial, at) },
+        journal = object : JobJournal {
+            override suspend fun started(job: ActiveJob) = repository.setActiveJob(job)
+            override suspend fun ended() = repository.clearActiveJob()
+        },
     ).also { it.startService = { CleanupService.start(app) } }
 
     private companion object {

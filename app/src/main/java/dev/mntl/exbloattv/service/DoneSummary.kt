@@ -24,6 +24,8 @@ data class DoneSummary(
     val deleted: List<String>,
     /** Steps the person chose to skip. */
     val skipped: List<Step>,
+    /** The "after" numbers were read a minute after the restart (false: right after the last step). */
+    val measuredAfterRestart: Boolean = false,
 ) {
     val memoryFreedKb: Long? get() = diff(memoryBeforeKb, memoryAfterKb)
     val storageFreedKb: Long? get() = diff(storageBeforeKb, storageAfterKb)
@@ -43,6 +45,7 @@ data class DoneSummary(
             phone: String,
             since: Long,
             steps: List<StepState>,
+            measuredAfterRestart: Boolean = false,
         ): DoneSummary {
             val mine = changes?.filter {
                 it.verified && it.byPhone == phone && it.at >= since && (it.id.startsWith("run-") || it.id.startsWith("swap-"))
@@ -56,6 +59,7 @@ data class DoneSummary(
                 homeIsFlauncher = mine?.any { it.kind == ChangeKind.LAUNCHER_SWAP && it.id.startsWith("swap-") },
                 deleted = mine.orEmpty().filter { it.kind == ChangeKind.UNINSTALL }.mapNotNull { it.pkg }.distinct(),
                 skipped = steps.filter { it.status == StepStatus.SKIPPED }.map { it.step },
+                measuredAfterRestart = measuredAfterRestart && after != null,
             )
         }
 

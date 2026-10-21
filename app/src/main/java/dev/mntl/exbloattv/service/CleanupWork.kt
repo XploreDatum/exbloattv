@@ -10,6 +10,7 @@ import dev.mntl.exbloattv.cleanup.Step
 import dev.mntl.exbloattv.cleanup.StepStatus
 import dev.mntl.exbloattv.cleanup.Undo
 import dev.mntl.exbloattv.cleanup.UndoInterruptedException
+import dev.mntl.exbloattv.data.ActiveJob
 import dev.mntl.exbloattv.state.Change
 import dev.mntl.exbloattv.state.TvLockedException
 import dev.mntl.exbloattv.state.TvStateStore
@@ -36,6 +37,17 @@ data class CleanupRequest(
     /** Package -> friendly name, for the checklist and the runner's messages. */
     val appNames: Map<String, String>,
 )
+
+/** Where the running job is written down while it runs (DataStore in the app). */
+interface JobJournal {
+    suspend fun started(job: ActiveJob)
+    suspend fun ended()
+
+    object None : JobJournal {
+        override suspend fun started(job: ActiveJob) = Unit
+        override suspend fun ended() = Unit
+    }
+}
 
 data class UndoRequest(val serial: String, val host: String, val tvName: String)
 
@@ -64,7 +76,7 @@ sealed interface WorkState {
     data class Cleaned(val serial: String, val tvName: String, val host: String, val summary: DoneSummary, val appNames: Map<String, String>) : WorkState
 
     /** The run ended without finishing (unexpected error or the system stopped it). [progress] is the last checklist. */
-    data class CleanupStopped(val serial: String, val tvName: String, val progress: RunProgress?, val appNames: Map<String, String>) : WorkState
+    data class CleanupStopped(val serial: String, val tvName: String, val host: String, val progress: RunProgress?, val appNames: Map<String, String>) : WorkState
 
     data class Undoing(val serial: String, val tvName: String) : WorkState
 
@@ -96,6 +108,8 @@ class CleanupWork(
     private val swapFor: (TvStateStore, String) -> LauncherSwap,
     private val appScope: CoroutineScope,
     private val onCleaned: suspend (serial: String, at: Long) -> Unit = { _, _ -> },
+    /** Records the running job (so a run cut off by the app being killed can be shown later) and clears it. */
+    private val journal: JobJournal = JobJournal.None,
     private val now: () -> Long = System::currentTimeMillis,
     private val settleSeconds: Int = 60,
 ) {
@@ -133,6 +147,11 @@ class CleanupWork(
     }
 
     fun claimPending(): Job? = pending.getAndSet(null)
+
+    /** The service couldn't go to the foreground: run the job here instead (it may pause while the phone sleeps). */
+    fun runWithoutService(job: Job) {
+        appScope.launch { execute(job) }
+    }
 
     suspend fun retry(index: Int) = runner?.retry(index)
 
@@ -174,34 +193,55 @@ class CleanupWork(
     suspend fun execute(job: Job) {
         running = currentCoroutineContext()[kotlinx.coroutines.Job]
         abandoned = false
-        when (job) {
-            is Job.Clean -> clean(job.request)
-            is Job.UndoAll -> undo(job.request)
+        try {
+            journal.started(
+                when (job) {
+                    is Job.Clean -> ActiveJob(job.request.serial, ActiveJob.Kind.CLEAN, now(), job.request.tvName, job.request.host)
+                    is Job.UndoAll -> ActiveJob(job.request.serial, ActiveJob.Kind.UNDO, now(), job.request.tvName, job.request.host)
+                },
+            )
+            when (job) {
+                is Job.Clean -> clean(job.request)
+                is Job.UndoAll -> undo(job.request)
+            }
+        } finally {
+            withContext(NonCancellable) { runCatching { journal.ended() } }
         }
     }
 
     private suspend fun clean(req: CleanupRequest) {
-        val phone = phoneName()
         val since = now()
-        val r = CleanupRunner(
-            connect = { connector.connect(req.host) },
-            storeFor = { TvStateStore(it) },
-            swapFor = { store -> swapFor(store, phone) },
-            phone = phone,
-            serial = req.serial,
-            appNames = req.appNames,
-        )
+        var phone: String? = null
         var last: RunProgress? = null
+        var stepsFinished = false
+        var restarted = false
         var cleaning = WorkState.Cleaning(req.serial, req.tvName, null, req.appNames)
-        runner = r
+        // Every step is finished: whatever stops us now, the TV is clean; numbers we couldn't take show "—".
+        suspend fun cleaned(after: Inventory?, changes: List<Change>?) {
+            val summary = DoneSummary.compute(req.before, after, changes, phone!!, since, last?.steps.orEmpty(), restarted)
+            onCleaned(req.serial, now())
+            _state.value = WorkState.Cleaned(req.serial, req.tvName, req.host, summary, req.appNames)
+        }
         try {
+            val me = phoneName()
+            phone = me
+            val r = CleanupRunner(
+                connect = { connector.connect(req.host) },
+                storeFor = { TvStateStore(it) },
+                swapFor = { store -> swapFor(store, me) },
+                phone = me,
+                serial = req.serial,
+                appNames = req.appNames,
+            )
+            runner = r
             r.run(req.plan, req.before).collect {
                 last = it
                 cleaning = cleaning.copy(progress = it)
                 _state.value = cleaning
             }
             runner = null
-            val restarted = last?.steps?.any { it.step == Step.RebootAndVerify && it.status == StepStatus.DONE } == true
+            stepsFinished = true
+            restarted = last?.steps?.any { it.step == Step.RebootAndVerify && it.status == StepStatus.DONE } == true
             if (restarted) {
                 for (s in settleSeconds downTo 1) {
                     _state.value = cleaning.copy(settleSecondsLeft = s)
@@ -210,16 +250,18 @@ class CleanupWork(
             }
             _state.value = cleaning.copy(measuring = true)
             val (after, changes) = measure(req)
-            val summary = DoneSummary.compute(req.before, after, changes, phone, since, last?.steps.orEmpty())
-            onCleaned(req.serial, now())
-            _state.value = WorkState.Cleaned(req.serial, req.tvName, req.host, summary, req.appNames)
+            cleaned(after, changes)
         } catch (e: CancellationException) {
             withContext(NonCancellable) {
-                _state.value = if (abandoned) WorkState.Idle else WorkState.CleanupStopped(req.serial, req.tvName, last, req.appNames)
+                when {
+                    abandoned -> _state.value = WorkState.Idle
+                    stepsFinished -> cleaned(null, null)
+                    else -> _state.value = WorkState.CleanupStopped(req.serial, req.tvName, req.host, last, req.appNames)
+                }
             }
             throw e
         } catch (e: Exception) {
-            _state.value = WorkState.CleanupStopped(req.serial, req.tvName, last, req.appNames)
+            if (stepsFinished) cleaned(null, null) else _state.value = WorkState.CleanupStopped(req.serial, req.tvName, req.host, last, req.appNames)
         } finally {
             runner = null
         }

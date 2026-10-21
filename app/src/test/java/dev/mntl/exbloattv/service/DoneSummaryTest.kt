@@ -73,6 +73,18 @@ class DoneSummaryTest {
         assertNull(s3.storageFreedKb)
     }
 
+    @Test fun saysWhenTheAfterNumbersWereTaken() {
+        assertEquals(true, DoneSummary.compute(before, after, log, phone, since, steps, measuredAfterRestart = true).measuredAfterRestart)
+        assertEquals(false, DoneSummary.compute(before, after, log, phone, since, steps, measuredAfterRestart = false).measuredAfterRestart)
+        // Nothing was measured, so it can't claim "a minute after the restart".
+        assertEquals(false, DoneSummary.compute(before, null, log, phone, since, steps, measuredAfterRestart = true).measuredAfterRestart)
+    }
+
+    @Test fun moreUsedAfterThanBeforeIsANegativeSaving() {
+        val worse = after.copy(memory = MemoryStats(2_000_000, 400_000, 1_300_000))
+        assertEquals(-100_000L, DoneSummary.compute(before, worse, log, phone, since, steps).memoryFreedKb) // shown as "None"
+    }
+
     @Test fun unreadableLogMeansUnknownCounts() {
         val s = DoneSummary.compute(before, after, null, phone, since, steps)
         assertNull(s.switchedOff)

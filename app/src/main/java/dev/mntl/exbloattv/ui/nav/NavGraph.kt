@@ -6,7 +6,11 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -76,7 +80,7 @@ fun ExBloatNavGraph(graph: AppGraph) {
     NavHost(nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
             HomeScreen(
-                vm = viewModel { HomeViewModel(graph.repository.tvs, SocketPortProbe) },
+                vm = viewModel { HomeViewModel(graph.repository.tvs, graph.repository.activeJob, SocketPortProbe) },
                 work = work,
                 onAddTv = { nav.navigate(Routes.FIND) },
                 onOpenTv = { nav.navigate(Routes.tv(it)) },
@@ -94,6 +98,8 @@ fun ExBloatNavGraph(graph: AppGraph) {
             )
         }
         composable(Routes.FIND) {
+            var nearbyAsked by remember { mutableStateOf<Boolean?>(null) }
+            LaunchedEffect(Unit) { nearbyAsked = graph.repository.nearbyAsked() }
             FindScreen(
                 vm = viewModel {
                     FindViewModel(
@@ -108,6 +114,11 @@ fun ExBloatNavGraph(graph: AppGraph) {
                     nav.navigate(if (row.readiness == TvReadiness.READY) Routes.approve(row.host) else Routes.debug(row.host))
                 },
                 onManualHost = { nav.navigate(Routes.approve(it)) },
+                nearbyAsked = nearbyAsked,
+                onNearbyAsked = {
+                    nearbyAsked = true
+                    graph.scope.launch { graph.repository.setNearbyAsked() }
+                },
             )
         }
         composable(Routes.DEBUG) { entry ->
@@ -142,6 +153,7 @@ fun ExBloatNavGraph(graph: AppGraph) {
                     load = { graph.session.cached(serial) ?: graph.session.reload(serial) },
                     savedChoices = { graph.repository.savedChoices(serial) },
                     resolveLabel = { app -> graph.session.label(serial, app) },
+                    onLeave = { graph.session.release(serial) },
                 )
             }
             KeepScreen(
@@ -167,10 +179,11 @@ fun ExBloatNavGraph(graph: AppGraph) {
                             SavedChoices(c.keep.filterKeys { it in switches }, c.fasterAnimations, c.stopBackground, c.clearCaches, c.newHomeScreen),
                         )
                     }
-                    askForNotifications()
+                    if (!graph.work.startCleanup(request)) return@start false
+                    // Only now: a refused start leaves the Keep screen working as it was.
                     vm.stopLabels()
                     graph.session.release(ready.tv.serial)
-                    if (!graph.work.startCleanup(request)) return@start false
+                    askForNotifications()
                     resetTo(nav, Routes.cleaning(ready.tv.serial))
                     true
                 },
@@ -178,6 +191,7 @@ fun ExBloatNavGraph(graph: AppGraph) {
         }
         composable(Routes.CLEANING) { entry ->
             val serial = entry.arguments?.getString("serial").orEmpty()
+            val activeJob by graph.repository.activeJob.collectAsStateWithLifecycle(null)
             CleaningScreen(
                 serial = serial,
                 work = work,
@@ -188,6 +202,14 @@ fun ExBloatNavGraph(graph: AppGraph) {
                     graph.session.invalidate(serial)
                     nav.navigate(Routes.keep(serial)) { popUpTo(Routes.CLEANING) { inclusive = true } }
                 },
+                interrupted = activeJob?.takeIf { it.serial == serial },
+                onOpenTv = { resetTo(nav, Routes.tv(serial)) },
+                onUndo = { host, name ->
+                    askForNotifications()
+                    graph.work.startUndo(UndoRequest(serial, host, name))
+                    resetTo(nav, Routes.tv(serial))
+                },
+                onAcknowledge = { graph.work.acknowledge(serial) },
             )
         }
         composable(Routes.DONE) { entry ->
@@ -213,6 +235,8 @@ fun ExBloatNavGraph(graph: AppGraph) {
                     TvDetailsViewModel(
                         serial = serial,
                         tv = graph.repository.tvs.map { list -> list.firstOrNull { it.serial == serial } },
+                        activeJob = graph.repository.activeJob,
+                        phoneName = { graph.repository.phoneName() },
                         readState = { host, s ->
                             graph.connector.connect(host, authTimeoutMs = 15_000).use { TvStateStore(it).load(s) }
                         },

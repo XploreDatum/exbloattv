@@ -39,10 +39,18 @@ import dev.mntl.exbloattv.ui.components.PrimaryButton
 import dev.mntl.exbloattv.ui.components.QuietButton
 import dev.mntl.exbloattv.ui.components.SegmentedGroup
 
+/** Space freed: "—" when unknown, "None" when nothing was freed (never a made-up "0 B" for a negative number). */
+@Composable
+fun freedText(kb: Long?): String = when {
+    kb == null -> stringResource(R.string.dash)
+    kb <= 0 -> stringResource(R.string.done_none)
+    else -> sizeText(kb)
+}
+
 @Composable
 fun sizeText(kb: Long?): String {
     val context = LocalContext.current
-    return kb?.let { Formatter.formatShortFileSize(context, maxOf(0L, it) * 1024) } ?: stringResource(R.string.dash)
+    return kb?.let { Formatter.formatShortFileSize(context, it * 1024) } ?: stringResource(R.string.dash)
 }
 
 /** "All clean": what was freed and changed, honestly (a dash when something couldn't be measured). */
@@ -80,8 +88,8 @@ fun DoneScreen(serial: String, work: WorkState, onDone: () -> Unit, onUndo: (hos
         }
         SegmentedGroup(
             listOf(
-                { Stat(stringResource(R.string.done_memory), sizeText(s.memoryFreedKb)) },
-                { Stat(stringResource(R.string.done_storage), sizeText(s.storageFreedKb)) },
+                { Stat(stringResource(R.string.done_memory), freedText(s.memoryFreedKb)) },
+                { Stat(stringResource(R.string.done_storage), freedText(s.storageFreedKb)) },
                 { Stat(stringResource(R.string.done_switched_off), s.switchedOff?.let { pluralStringResource(R.plurals.done_apps, it, it) } ?: dash) },
                 { Stat(stringResource(R.string.done_home), home) },
             ),
@@ -114,7 +122,13 @@ fun DoneScreen(serial: String, work: WorkState, onDone: () -> Unit, onUndo: (hos
         ModalBottomSheet(onDismissRequest = { details = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 18.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
                 Text(stringResource(R.string.done_details), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 12.dp))
-                Text(stringResource(R.string.done_details_memory, sizeText(s.memoryBeforeKb), sizeText(s.memoryAfterKb)), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    stringResource(
+                        if (s.measuredAfterRestart) R.string.done_details_memory_restart else R.string.done_details_memory_now,
+                        sizeText(s.memoryBeforeKb), sizeText(s.memoryAfterKb),
+                    ),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
                 VSpace(8)
                 Text(stringResource(R.string.done_details_storage, sizeText(s.storageBeforeKb), sizeText(s.storageAfterKb)), style = MaterialTheme.typography.bodyLarge)
                 VSpace(8)

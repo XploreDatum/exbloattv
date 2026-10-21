@@ -79,6 +79,8 @@ class KeepViewModel(
     private val load: suspend () -> LoadedTv,
     private val savedChoices: suspend () -> SavedChoices?,
     private val resolveLabel: (suspend (CategorizedApp) -> AppLabel)? = null,
+    /** Called when the person leaves the screen (back or on to cleaning): frees the session's TV connection. */
+    private val onLeave: () -> Unit = {},
 ) : ViewModel() {
     private val _state = MutableStateFlow<KeepUiState>(KeepUiState.Loading)
     val state: StateFlow<KeepUiState> = _state.asStateFlow()
@@ -91,6 +93,8 @@ class KeepViewModel(
     init {
         start()
     }
+
+    override fun onCleared() = onLeave()
 
     fun retry() {
         if (_state.value is KeepUiState.Failed) start()

@@ -59,6 +59,8 @@
     <string name="find_nothing_body">Make sure the TV is on and on the same Wi-Fi as this phone. Guest networks and some routers keep devices apart, so the phone can\'t see the TV. Try your main Wi-Fi, or type the TV\'s address.</string>
     <string name="find_no_wifi_title">Connect to Wi-Fi</string>
     <string name="find_no_wifi_body">Your phone needs to be on the same Wi-Fi as the TV. Mobile data can\'t reach it.</string>
+    <string name="find_nearby_rationale">Allow “Nearby devices” so TVs show their names in this list.</string>
+    <string name="find_nearby_allow">Allow</string>
     <string name="find_open_wifi">Open Wi-Fi settings</string>
     <string name="find_check_again">I\'m on Wi-Fi now</string>
     <string name="ip_dialog_title">TV address</string>
@@ -198,6 +200,11 @@
         <item quantity="one">%d app will be switched off.</item>
         <item quantity="other">%d apps will be switched off.</item>
     </plurals>
+    <plurals name="review_switch_off_plus_home">
+        <item quantity="one">%d app will be switched off (plus the old home screen).</item>
+        <item quantity="other">%d apps will be switched off (plus the old home screen).</item>
+    </plurals>
+    <string name="review_old_home_off">The old home screen will be switched off.</string>
     <plurals name="review_remove">
         <item quantity="one">%1$d app will be removed (removing deletes its data): %2$s.</item>
         <item quantity="other">%1$d apps will be removed (removing deletes their data): %2$s.</item>
@@ -274,8 +281,10 @@
     </plurals>
     <string name="done_home_flauncher">FLauncher</string>
     <string name="done_home_unchanged">Unchanged</string>
+    <string name="done_none">None</string>
     <string name="done_details">How these were measured</string>
-    <string name="done_details_memory">Memory used by apps: %1$s before, %2$s after (measured a minute after the restart).</string>
+    <string name="done_details_memory_restart">Memory used by apps: %1$s before, %2$s after (measured a minute after the restart).</string>
+    <string name="done_details_memory_now">Memory used by apps: %1$s before, %2$s after (measured right after the cleanup).</string>
     <string name="done_details_storage">Storage used: %1$s before, %2$s after.</string>
     <string name="done_details_unknown">A dash means the TV didn\'t answer in time, so it couldn\'t be measured.</string>
     <string name="done_details_count">Only changes the TV confirmed are counted.</string>
@@ -332,6 +341,11 @@
     <string name="tv_log_hide">Hide details</string>
     <string name="tv_locked_now">Another phone (%1$s) is working on this TV right now.</string>
     <string name="tv_refresh">Refresh</string>
+    <string name="interrupted_clean">A cleanup from this phone was interrupted.</string>
+    <string name="interrupted_undo">An undo from this phone was interrupted.</string>
+    <string name="interrupted_body">Everything it changed is recorded on the TV. Clean up again to finish, or undo everything.</string>
+    <string name="home_interrupted">Work on %1$s was interrupted</string>
+    <string name="cleaning_open_tv">Open the TV\'s page</string>
     <string name="tv_not_found">This TV isn\'t on this phone any more.</string>
     <string name="log_disable">Switched off %1$s</string>
     <string name="log_enable">Switched on %1$s</string>

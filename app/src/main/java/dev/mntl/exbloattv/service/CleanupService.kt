@@ -31,16 +31,25 @@ import kotlinx.coroutines.launch
  */
 class CleanupService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private var running = false
+    @Volatile private var running = false
+    /** The newest start; stopping with it never cuts off a start that came in later. */
+    @Volatile private var latestStartId = 0
+    private val awake: KeepAwake by lazy { AndroidKeepAwake(this) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
         val work = (application as ExBloatApp).graph.work
-        goForeground(Notifications.progress(this, work.state.value))
+        if (!goForeground(Notifications.progress(this, work.state.value))) {
+            // Not allowed to be a foreground service right now: run the job in the app instead, and stop cleanly.
+            work.claimPending()?.let(work::runWithoutService)
+            if (!running) stopSelf(startId)
+            return START_NOT_STICKY
+        }
         val job = work.claimPending()
         if (job == null) {
-            if (!running) stopSelfQuietly()
+            if (!running) stop(startId)
             return START_NOT_STICKY
         }
         running = true
@@ -52,12 +61,13 @@ class CleanupService : Service() {
                 }
             }
             try {
-                work.execute(job)
+                // CPU and Wi-Fi stay awake for the whole job: settle waits, restart polling and retries keep time.
+                awake.whileRunning { work.execute(job) }
             } finally {
                 updates.cancel()
                 running = false
                 Notifications.result(this@CleanupService, work.state.value)?.let { notify(Notifications.RESULT_ID, it) }
-                stopSelfQuietly()
+                stop(latestStartId)
             }
         }
         return START_NOT_STICKY
@@ -66,26 +76,30 @@ class CleanupService : Service() {
     /** Android 15+ caps dataSync services; stop cleanly (the runner releases the TV lock as it is cancelled). */
     override fun onTimeout(startId: Int, fgsType: Int) {
         scope.cancel()
-        stopSelfQuietly()
+        awake.release()
+        stop(latestStartId)
     }
 
     override fun onDestroy() {
         scope.cancel()
+        awake.release()
         super.onDestroy()
     }
 
-    private fun goForeground(n: Notification) {
+    /** False if the system refused (for example a start from the background); the caller then runs the job itself. */
+    private fun goForeground(n: Notification): Boolean {
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
-        try {
+        return try {
             ServiceCompat.startForeground(this, Notifications.ONGOING_ID, n, type)
+            true
         } catch (e: Exception) {
-            // Not allowed to go foreground right now: the work still runs, it just may stop if the phone sleeps.
+            false
         }
     }
 
-    private fun stopSelfQuietly() {
+    private fun stop(startId: Int) {
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopSelf(startId)
     }
 
     private fun notify(id: Int, n: Notification) {

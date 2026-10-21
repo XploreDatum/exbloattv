@@ -2,6 +2,8 @@ package dev.mntl.exbloattv.ui.screens
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,7 +41,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -71,6 +72,9 @@ import dev.mntl.exbloattv.ui.components.PrimaryButton
 import dev.mntl.exbloattv.ui.components.QuietButton
 import dev.mntl.exbloattv.ui.components.StatusChip
 
+/** Android 16 (API 36): local network protection may require "Nearby devices" for mDNS. */
+private const val NEARBY_FOR_NAMES_SDK = 36
+
 /** Four numbers 0-255 with dots. */
 fun isIpv4(text: String): Boolean {
     val parts = text.trim().split('.')
@@ -83,15 +87,20 @@ fun FindScreen(
     onBack: (() -> Unit)?,
     onPick: (FindRow) -> Unit,
     onManualHost: (String) -> Unit,
+    /** null while unknown; true once "Nearby devices" was asked for (it is never asked again). */
+    nearbyAsked: Boolean?,
+    onNearbyAsked: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // Android 13+: nearby Wi-Fi devices (used for finding TV names on the network). The scan works either way.
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) permission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+    // Android 16+ may hold back the network-name lookup (mDNS) without "Nearby devices". The address scan works
+    // either way, so this is asked once, only when the person taps Allow on the one-line explanation.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.rescan()
     }
+    val needsNearby = Build.VERSION.SDK_INT >= NEARBY_FOR_NAMES_SDK &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
     LifecycleResumeEffect(state.wifi) {
         if (!state.wifi) vm.rescan()
         onPauseOrDispose { }
@@ -131,6 +140,24 @@ fun FindScreen(
         ScreenTitle(stringResource(R.string.find_title))
         Supporting(stringResource(R.string.find_subtitle))
         ScanHero(state.scanning)
+        if (needsNearby && nearbyAsked == false) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    stringResource(R.string.find_nearby_rationale),
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = {
+                    onNearbyAsked()
+                    permission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+                }, modifier = Modifier.defaultMinSize(minHeight = 48.dp)) { Text(stringResource(R.string.find_nearby_allow)) }
+            }
+        }
         if (state.scanning) {
             Row(
                 Modifier.fillMaxWidth().padding(4.dp).semantics { liveRegion = LiveRegionMode.Polite },

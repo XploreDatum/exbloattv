@@ -1,7 +1,10 @@
 package dev.mntl.exbloattv.ui.screens
 
 import android.text.format.DateUtils
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -28,7 +31,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import dev.mntl.exbloattv.R
+import dev.mntl.exbloattv.data.ActiveJob
 import dev.mntl.exbloattv.data.RememberedTv
+import dev.mntl.exbloattv.state.Lock
 import dev.mntl.exbloattv.service.UndoFailureInfo
 import dev.mntl.exbloattv.service.UndoProblem
 import dev.mntl.exbloattv.service.WorkState
@@ -46,6 +51,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -55,15 +61,39 @@ sealed interface LogState {
     data object Unreachable : LogState
 }
 
+enum class LockView { NONE, OTHER_PHONE, THIS_PHONE_INTERRUPTED }
+
+/**
+ * What the TV's run lock means for the person. A fresh lock held by this phone while this phone runs nothing is a run
+ * that was cut off (the app was killed): this phone can take its own lock again right away, so it is not "another
+ * phone". [runningHere]: this phone is working on this TV right now.
+ */
+fun lockView(lock: Lock?, me: String?, now: Long, runningHere: Boolean): LockView = when {
+    lock == null || now - lock.at >= TvStateStore.LOCK_EXPIRY_MS -> LockView.NONE
+    me != null && lock.byPhone == me -> if (runningHere) LockView.NONE else LockView.THIS_PHONE_INTERRUPTED
+    else -> LockView.OTHER_PHONE
+}
+
 /** The TV page: its record on this phone plus the change log read from the TV itself. */
 class TvDetailsViewModel(
     private val serial: String,
     tv: Flow<RememberedTv?>,
+    activeJob: Flow<ActiveJob?>,
+    private val phoneName: suspend () -> String,
     private val readState: suspend (host: String, serial: String) -> TvState,
     /** Called when the person leaves the page: a finished Undo result is then forgotten. */
     private val onLeave: () -> Unit = {},
 ) : ViewModel() {
     val tv: StateFlow<RememberedTv?> = tv.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    /** A job recorded for this TV; when this phone isn't running anything, it was cut off. */
+    val activeJob: StateFlow<ActiveJob?> =
+        activeJob.map { it?.takeIf { j -> j.serial == serial } }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    private val _me = MutableStateFlow<String?>(null)
+    val me: StateFlow<String?> = _me.asStateFlow()
+
+    init {
+        viewModelScope.launch { _me.value = phoneName() }
+    }
     private val _log = MutableStateFlow<LogState>(LogState.Loading)
     val log: StateFlow<LogState> = _log.asStateFlow()
     private var job: Job? = null
@@ -98,6 +128,8 @@ fun TvDetailsScreen(
 ) {
     val tv by vm.tv.collectAsStateWithLifecycle()
     val log by vm.log.collectAsStateWithLifecycle()
+    val activeJob by vm.activeJob.collectAsStateWithLifecycle()
+    val me by vm.me.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var confirm by rememberSaveable { mutableStateOf(false) }
@@ -155,6 +187,12 @@ fun TvDetailsScreen(
         )
         VSpace(8)
 
+        val runningHere = mine?.busy == true
+        val ownLock = (log as? LogState.Loaded)?.state?.lock
+            ?.let { lockView(it, me, System.currentTimeMillis(), runningHere) == LockView.THIS_PHONE_INTERRUPTED } == true
+        val cutOff = !busy && (activeJob != null || ownLock)
+        if (cutOff) InterruptedNote(activeJob?.kind ?: ActiveJob.Kind.CLEAN)
+
         UndoSection(mine, nameOf, onRetry = { onUndo(t.lastHost, t.name) }, onOpenInStore = { pkg ->
             scope.launch { snackbar.showSnackbar(if (onOpenInStore(t.lastHost, pkg)) opened else openFailed) }
         })
@@ -168,7 +206,7 @@ fun TvDetailsScreen(
             }
             is LogState.Loaded -> {
                 val lock = l.state.lock
-                if (lock != null && !busy && System.currentTimeMillis() - lock.at < TvStateStore.LOCK_EXPIRY_MS) {
+                if (lockView(lock, me, System.currentTimeMillis(), runningHere) == LockView.OTHER_PHONE && lock != null) {
                     Supporting(stringResource(R.string.tv_locked_now, lock.byPhone))
                 }
                 val changes = l.state.changes
@@ -194,6 +232,27 @@ fun TvDetailsScreen(
             confirm = false
             onUndo(t.lastHost, t.name)
         })
+    }
+}
+
+/** "A cleanup from this phone was interrupted": both actions below work right away. */
+@Composable
+fun InterruptedNote(kind: ActiveJob.Kind) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .padding(16.dp)
+            .semantics(mergeDescendants = true) { },
+    ) {
+        Text(
+            stringResource(if (kind == ActiveJob.Kind.UNDO) R.string.interrupted_undo else R.string.interrupted_clean),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        Text(stringResource(R.string.interrupted_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
     }
 }
 
