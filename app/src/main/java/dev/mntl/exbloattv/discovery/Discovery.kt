@@ -12,13 +12,15 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.Inet4Address
 import kotlin.coroutines.resume
 
 /** Finds TVs on the phone's Wi-Fi: a port scan of the local /24 plus mDNS, merged by address. */
 class Discovery(
     private val context: Context,
-    private val scanner: SubnetScanner = SubnetScanner(SocketPortProbe),
+    private val probe: PortProbe = SocketPortProbe,
+    private val scanner: SubnetScanner = SubnetScanner(probe),
 ) {
 
     /** The phone's Wi-Fi IPv4 address and prefix length, or null when not on Wi-Fi. */
@@ -34,25 +36,11 @@ class Discovery(
 
     fun scan(): Flow<FoundTv> = callbackFlow {
         val phone = phoneWifiIpv4()
-        val seen = HashMap<String, FoundTv>()
-        suspend fun offer(tv: FoundTv) {
-            if (tv.host == phone?.first) return
-            val old = seen[tv.host]
-            val merged = when {
-                old == null -> tv
-                old.readiness == TvReadiness.READY || tv.readiness == TvReadiness.NEEDS_SETUP ->
-                    old.copy(name = old.name ?: tv.name)
-                else -> tv.copy(name = tv.name ?: old.name)
-            }
-            if (merged == old) return
-            seen[tv.host] = merged
-            send(merged)
-        }
-
+        // Every source (subnet scan, mDNS) funnels through this one channel, so `seen` has one writer.
+        val events = Channel<FoundTv>(Channel.UNLIMITED)
+        val found = Channel<NsdServiceInfo>(Channel.UNLIMITED)
         val nsd = context.getSystemService(NsdManager::class.java)
         val listeners = mutableListOf<NsdManager.DiscoveryListener>()
-        val found = Channel<NsdServiceInfo>(Channel.UNLIMITED)
-        val typeOf = HashMap<String, String>()
 
         if (nsd != null) {
             for (type in listOf(ADB_TYPE, REMOTE_TYPE)) {
@@ -62,10 +50,7 @@ class Discovery(
                     override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
                     override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
                     override fun onServiceLost(serviceInfo: NsdServiceInfo) {}
-                    override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                        typeOf[serviceInfo.serviceName] = type
-                        found.trySend(serviceInfo)
-                    }
+                    override fun onServiceFound(serviceInfo: NsdServiceInfo) { found.trySend(serviceInfo) }
                 }
                 try {
                     nsd.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, l)
@@ -80,27 +65,41 @@ class Discovery(
         launch {
             for (info in found) {
                 val resolved = nsd?.let { resolve(it, info) } ?: continue
-                @Suppress("DEPRECATION")
                 val host = resolved.host as? Inet4Address ?: continue // IPv4 only
-                val readiness = if (typeOf[info.serviceName] == ADB_TYPE) TvReadiness.READY else TvReadiness.NEEDS_SETUP
-                offer(FoundTv(host.hostAddress!!, readiness, resolved.serviceName))
+                events.trySend(classifyMdnsHit(host.hostAddress!!, resolved.serviceName, probe))
             }
         }
 
         launch {
-            if (phone != null) scanner.scan(scanner.hostsFor(phone.first, phone.second)).collect { offer(it) }
+            if (phone != null) scanner.scan(scanner.hostsFor(phone.first, phone.second)).collect { events.trySend(it) }
             delay(MDNS_GRACE_MS)
+            events.close()
+        }
+
+        launch {
+            val seen = HashMap<String, FoundTv>()
+            for (tv in events) {
+                if (tv.host == phone?.first) continue
+                val next = mergeFound(seen[tv.host], tv) ?: continue
+                seen[tv.host] = next
+                send(next)
+            }
             close()
         }
 
         awaitClose {
             found.close()
+            events.close()
             listeners.forEach { try { nsd?.stopServiceDiscovery(it) } catch (_: Exception) {} }
         }
     }
 
     @Suppress("DEPRECATION")
     private suspend fun resolve(nsd: NsdManager, info: NsdServiceInfo): NsdServiceInfo? =
+        withTimeoutOrNull(RESOLVE_TIMEOUT_MS) { resolveOnce(nsd, info) }
+
+    @Suppress("DEPRECATION")
+    private suspend fun resolveOnce(nsd: NsdManager, info: NsdServiceInfo): NsdServiceInfo? =
         suspendCancellableCoroutine { cont ->
             try {
                 nsd.resolveService(info, object : NsdManager.ResolveListener {
@@ -120,5 +119,6 @@ class Discovery(
         const val ADB_TYPE = "_adb._tcp."
         const val REMOTE_TYPE = "_androidtvremote2._tcp."
         const val MDNS_GRACE_MS = 3_000L
+        const val RESOLVE_TIMEOUT_MS = 3_000L
     }
 }

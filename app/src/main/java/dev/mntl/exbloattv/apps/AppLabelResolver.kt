@@ -23,18 +23,23 @@ class AppLabelResolver(
 
     suspend fun resolve(adb: AdbClient, app: CategorizedApp, apkSizeBytes: Long?): AppLabel {
         val pkg = app.pkg.name
-        val fallbackName = app.name.ifBlank { prettify(pkg) }
-        // A name equal to the bare last package segment came from the fallback, not the catalog.
-        val catalogNamed = app.name != pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+        // The categorizer's own fallback is the bare last package segment; anything else is a catalog name.
+        val catalogNamed = app.name.isNotBlank() && app.name != bareName(pkg)
+        val fallbackName = if (catalogNamed) app.name else prettify(pkg)
         return try {
             val version = versionCode(adb, pkg)
             val icon = File(File(cacheDir, "icons"), "$pkg-$version.png")
-            if (icon.isFile && icon.length() > 0) return AppLabel(fallbackName, icon)
+            val nameFile = File(icon.parentFile, "$pkg-$version.txt")
+            if (icon.isFile && icon.length() > 0) {
+                val cached = if (catalogNamed) null else runCatching { nameFile.readText().trim() }.getOrNull()
+                return AppLabel(cached?.ifBlank { null } ?: fallbackName, icon)
+            }
 
             val size = apkSizeBytes ?: statSize(adb, app.pkg.apkPath)
             if (size == null || size > MAX_APK_BYTES) return AppLabel(fallbackName, null)
 
-            val parsed = pullAndParse(adb, app.pkg.apkPath, pkg, icon) ?: return AppLabel(fallbackName, null)
+            val parsed = pullAndParse(adb, app.pkg.apkPath, pkg, icon, nameFile)
+                ?: return AppLabel(fallbackName, null)
             AppLabel(if (catalogNamed) fallbackName else parsed.name.ifBlank { fallbackName }, parsed.iconPng)
         } catch (e: CancellationException) {
             throw e
@@ -45,13 +50,13 @@ class AppLabelResolver(
 
     private suspend fun versionCode(adb: AdbClient, pkg: String): Long =
         Regex("versionCode=(\\d+)")
-            .find(adb.shell("dumpsys package $pkg | grep -m1 versionCode").output)
+            .find(adb.shell("dumpsys package ${q(pkg)} | grep -m1 versionCode").output)
             ?.groupValues?.get(1)?.toLongOrNull() ?: 0L
 
     private suspend fun statSize(adb: AdbClient, apkPath: String): Long? =
-        adb.shell("stat -c %s $apkPath").output.trim().toLongOrNull()
+        adb.shell("stat -c %s ${q(apkPath)}").output.trim().toLongOrNull()
 
-    private suspend fun pullAndParse(adb: AdbClient, remote: String, pkg: String, target: File): AppLabel? {
+    private suspend fun pullAndParse(adb: AdbClient, remote: String, pkg: String, target: File, nameFile: File): AppLabel? {
         cacheDir.mkdirs()
         val local = File.createTempFile("apk-$pkg-", ".apk", cacheDir)
         try {
@@ -61,7 +66,15 @@ class AppLabelResolver(
                     ?: return@withContext null
                 val png = parsed.iconPng ?: return@withContext AppLabel(parsed.name, null)
                 target.parentFile!!.mkdirs()
-                if (png != target) { png.copyTo(target, overwrite = true); png.delete() }
+                val tmp = File(target.parentFile, "${target.name}.tmp")
+                try {
+                    png.copyTo(tmp, overwrite = true)
+                    if (!tmp.renameTo(target)) throw java.io.IOException("rename failed")
+                    if (png != target) png.delete()
+                    if (parsed.name.isNotBlank()) nameFile.writeText(parsed.name)
+                } finally {
+                    tmp.delete()
+                }
                 AppLabel(parsed.name, target)
             }
         } catch (e: java.io.IOException) {
@@ -70,6 +83,11 @@ class AppLabelResolver(
             local.delete()
         }
     }
+
+    private fun q(s: String) = "'" + s.replace("'", "'\\''") + "'"
+
+    private fun bareName(pkg: String): String =
+        pkg.substringAfterLast('.').ifBlank { pkg }.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
     companion object {
         const val MAX_APK_BYTES = 40L * 1024 * 1024

@@ -1,5 +1,6 @@
 package dev.mntl.exbloattv.discovery
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -24,7 +25,7 @@ fun interface PortProbe {
 /** Real probe: a plain TCP connect with a hard timeout. */
 object SocketPortProbe : PortProbe {
     override suspend fun isOpen(host: String, port: Int, timeoutMs: Int): Boolean =
-        withContext(Dispatchers.IO) {
+        withContext(ProbeDispatcher) {
             try {
                 Socket().use { it.connect(InetSocketAddress(host, port), timeoutMs); true }
             } catch (_: Exception) {
@@ -32,6 +33,9 @@ object SocketPortProbe : PortProbe {
             }
         }
 }
+
+/** Blocking connects each hold a thread; Dispatchers.IO alone caps at 64 and would serialize the scan. */
+val ProbeDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(256)
 
 class SubnetScanner(private val probe: PortProbe, private val parallelism: Int = 64) {
 
@@ -60,15 +64,13 @@ class SubnetScanner(private val probe: PortProbe, private val parallelism: Int =
         }
     }
 
-    private suspend fun classify(host: String): FoundTv? = coroutineScope {
-        val ports = (listOf(ADB_PORT) + SETUP_PORTS).map { port ->
-            port to async { probe.isOpen(host, port, TIMEOUT_MS) }
-        }.toMap()
-        when {
-            ports.getValue(ADB_PORT).await() -> FoundTv(host, TvReadiness.READY)
-            SETUP_PORTS.map { ports.getValue(it) }.awaitAll().any { it } -> FoundTv(host, TvReadiness.NEEDS_SETUP)
-            else -> null
+    /** 5555 first; the cast/remote ports are only tried (concurrently) when it is closed. */
+    private suspend fun classify(host: String): FoundTv? {
+        if (probe.isOpen(host, ADB_PORT, TIMEOUT_MS)) return FoundTv(host, TvReadiness.READY)
+        val anySetup = coroutineScope {
+            SETUP_PORTS.map { port -> async { probe.isOpen(host, port, TIMEOUT_MS) } }.awaitAll().any { it }
         }
+        return if (anySetup) FoundTv(host, TvReadiness.NEEDS_SETUP) else null
     }
 
     companion object {

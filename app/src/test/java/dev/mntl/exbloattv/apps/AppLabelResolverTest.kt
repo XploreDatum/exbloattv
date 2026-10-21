@@ -23,7 +23,7 @@ class AppLabelResolverTest {
     )
 
     private fun tv() = FakeAdbClient().apply {
-        responses["dumpsys package com.mxtech.videoplayer.pro | grep -m1 versionCode"] = "    versionCode=42 minSdk=21 targetSdk=33"
+        responses["dumpsys package 'com.mxtech.videoplayer.pro' | grep -m1 versionCode"] = "    versionCode=42 minSdk=21 targetSdk=33"
         pullContent[apk] = ByteArray(10) { 1 }
     }
 
@@ -65,9 +65,9 @@ class AppLabelResolverTest {
     }
 
     @Test fun unknownSizeIsStatted() = runTest {
-        val adb = tv().apply { responses["stat -c %s $apk"] = "99999999999" }
+        val adb = tv().apply { responses["stat -c %s '$apk'"] = "99999999999" }
         val label = resolver().resolve(adb, app, null)
-        assertThat(adb.log).contains("stat -c %s $apk")
+        assertThat(adb.log).contains("stat -c %s '$apk'")
         assertThat(adb.log.any { it.startsWith("pull:") }).isFalse()
         assertThat(label.iconPng).isNull()
     }
@@ -97,7 +97,7 @@ class AppLabelResolverTest {
     }
 
     @Test fun cancellationIsRethrown() = runTest {
-        val adb = tv().also { it.failNext("stat -c %s $apk", CancellationException("stop")) }
+        val adb = tv().also { it.failNext("stat -c %s '$apk'", CancellationException("stop")) }
         try {
             resolver().resolve(adb, app, null)
             error("should have thrown")
@@ -109,5 +109,31 @@ class AppLabelResolverTest {
     @Test fun nonCatalogNameUsesRealLabel() = runTest {
         val plain = app.copy(name = "Pro")
         assertThat(resolver().resolve(tv(), plain, 1_000L).name).isEqualTo("Real Name")
+    }
+
+    @Test fun parseFailureWithBareFallbackNameUsesPrettify() = runTest {
+        val bare = app.copy(name = "Pro")
+        assertThat(resolver(parse = { null }).resolve(tv(), bare, 1_000L).name).isEqualTo("Videoplayer Pro")
+        val adb = tv().also { it.failNext("stat -c %s '$apk'", AdbError.Timeout()) }
+        assertThat(resolver().resolve(adb, bare, null).name).isEqualTo("Videoplayer Pro")
+    }
+
+    @Test fun uncataloguedNameIsStableAcrossCacheHit() = runTest {
+        val r = resolver()
+        val adb = tv()
+        val bare = app.copy(name = "Pro")
+        val first = r.resolve(adb, bare, 1_000L)
+        val second = r.resolve(adb, bare, 1_000L)
+        assertThat(first.name).isEqualTo("Real Name")
+        assertThat(second.name).isEqualTo("Real Name")
+        assertThat(adb.log.count { it.startsWith("pull:") }).isEqualTo(1)
+    }
+
+    @Test fun shellArgumentsAreQuoted() = runTest {
+        val odd = app.copy(pkg = app.pkg.copy(name = "a.b.c'd", apkPath = "/x y/b.apk"))
+        val adb = FakeAdbClient()
+        resolver().resolve(adb, odd, null)
+        assertThat(adb.log).contains("dumpsys package 'a.b.c'\\''d' | grep -m1 versionCode")
+        assertThat(adb.log).contains("stat -c %s '/x y/b.apk'")
     }
 }
