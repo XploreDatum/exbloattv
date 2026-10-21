@@ -1,0 +1,106 @@
+name: Bug report
+description: Something in ExBloat TV didn't work as expected.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. Please don't include anything personal (account names, Wi-Fi names, serial numbers, public IP addresses).
+        For a security problem, please use [private reporting](https://github.com/XploreDatum/exbloattv/security/advisories/new) instead.
+  - type: input
+    id: app_version
+    attributes:
+      label: App version
+      description: Shown under About in the app (the (i) button on Your TVs).
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: Phone model and Android version
+      placeholder: "Pixel 8, Android 15"
+    validations:
+      required: true
+  - type: input
+    id: tv
+    attributes:
+      label: TV model and Android version
+      description: On most TVs, Settings → Device Preferences (or System) → About.
+      placeholder: "Xiaomi Mi Box 4, Android 9"
+    validations:
+      required: true
+  - type: dropdown
+    id: brand
+    attributes:
+      label: TV type picked in the app
+      options:
+        - Android TV
+        - Google TV
+        - Xiaomi Mi Box / Mi TV
+        - TCL
+        - Sony
+        - Hisense
+        - Philips
+        - Fire TV
+        - Didn't get that far
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where did it go wrong?
+      options:
+        - Finding the TV
+        - Turning on debugging
+        - Allowing the phone on the TV
+        - Reading the TV / Keep what you watch
+        - Cleaning up
+        - New home screen (FLauncher)
+        - Restart and check
+        - Undo everything
+        - Somewhere else
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you tap, in order?
+      placeholder: |
+        1. Tapped Add a TV
+        2. Picked the TV and tapped Continue
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Copy any message the app showed, word for word if you can. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: changes
+    attributes:
+      label: What was changed (optional)
+      description: On the TV's page in the app, under What was changed, tap Show details and copy the lines here.
+      render: text
+  - type: dropdown
+    id: tv_state
+    attributes:
+      label: Is the TV working normally now?
+      options:
+        - "Yes"
+        - "No, the home screen is blank or wrong"
+        - "No, something else is wrong"
+        - "Not sure"
+    validations:
+      required: true

@@ -1,6 +1,6 @@
 # ExBloat TV — design
 
-**Date:** 2026-10-21 · **App ID:** `dev.mntl.exbloattv` · **Status:** approved in conversation ("I liked the design. Build it.")
+**Date:** 2026-10-21 · **App ID:** `dev.xpdt.exbloattv` · **Status:** approved in conversation ("I liked the design. Build it.")
 
 ## 1. Intent
 

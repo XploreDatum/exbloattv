@@ -1,0 +1,98 @@
+name: TV compatibility report
+description: Tell us whether ExBloat TV worked on your TV. Reports of "it worked" are just as useful as problems.
+title: "[TV]: "
+labels: ["tv-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you! These reports tell everyone which TVs the app has been tried on.
+        Please don't include anything personal (account names, Wi-Fi names, serial numbers).
+  - type: dropdown
+    id: result
+    attributes:
+      label: Did it work?
+      options:
+        - "Yes, everything worked"
+        - "Mostly, with a few skipped steps"
+        - "No"
+    validations:
+      required: true
+  - type: input
+    id: tv
+    attributes:
+      label: TV model
+      placeholder: "Xiaomi Mi Box 4"
+    validations:
+      required: true
+  - type: input
+    id: tv_android
+    attributes:
+      label: TV Android version
+      description: On most TVs, Settings → Device Preferences (or System) → About.
+      placeholder: "Android 9"
+    validations:
+      required: true
+  - type: dropdown
+    id: brand
+    attributes:
+      label: TV type picked in the app
+      options:
+        - Android TV
+        - Google TV
+        - Xiaomi Mi Box / Mi TV
+        - TCL
+        - Sony
+        - Hisense
+        - Philips
+        - Fire TV
+    validations:
+      required: true
+  - type: input
+    id: app_version
+    attributes:
+      label: App version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: phone
+    attributes:
+      label: Phone model and Android version
+      placeholder: "Pixel 8, Android 15"
+  - type: checkboxes
+    id: steps
+    attributes:
+      label: What worked?
+      description: Tick everything that worked.
+      options:
+        - label: The app found the TV by itself
+        - label: The setup steps matched the TV's menus
+        - label: The TV showed "Allow USB debugging?"
+        - label: All the TV's apps were listed
+        - label: Apps were switched off
+        - label: The new home screen (FLauncher) came up
+        - label: The TV restarted and the app said "All clean"
+        - label: Undo everything put the TV back
+  - type: textarea
+    id: menus
+    attributes:
+      label: Setup steps on your TV
+      description: If the menu names on your TV were different from the app's steps, how did you find Developer options and USB debugging?
+  - type: textarea
+    id: removed
+    attributes:
+      label: Apps you switched off or deleted
+      description: Package names if you have them (TV's page in the app → What was changed → Show details), otherwise the names shown in the app.
+      render: text
+  - type: textarea
+    id: kept
+    attributes:
+      label: Apps you kept that the app put in the wrong group, or didn't recognise ("Other")
+      description: Helps us improve the catalog.
+      render: text
+  - type: textarea
+    id: problems
+    attributes:
+      label: Anything that didn't work or surprised you
+      description: Messages the app showed, steps that were skipped, things that changed on the TV.

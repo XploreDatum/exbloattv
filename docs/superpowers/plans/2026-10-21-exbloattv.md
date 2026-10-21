@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A sideloadable Android phone app (`dev.mntl.exbloattv`) that finds an Android TV on the home Wi-Fi, connects over ADB, lists and categorises every installed app, lets the person choose what to keep, cleans up and speeds up the TV, swaps the launcher for FLauncher, and can undo everything.
+**Goal:** A sideloadable Android phone app (`dev.xpdt.exbloattv`) that finds an Android TV on the home Wi-Fi, connects over ADB, lists and categorises every installed app, lets the person choose what to keep, cleans up and speeds up the TV, swaps the launcher for FLauncher, and can undo everything.
 
 **Architecture:** Single-module Android app. A pure-Kotlin core (parsers, catalog/categoriser, safety guard, cleanup planner, runner, TV state file, undo) sits behind an `AdbClient` interface so it is fully unit-testable with a fake; a dadb-backed implementation talks to the real TV. Jetpack Compose + Material 3 Expressive UI drives a resumable cleanup run hosted in a foreground service.
 
@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- applicationId / namespace `dev.mntl.exbloattv`; minSdk **26**, targetSdk/compileSdk **36**; Java 17 toolchain.
+- applicationId / namespace `dev.xpdt.exbloattv`; minSdk **26**, targetSdk/compileSdk **36**; Java 17 toolchain.
 - Android SDK at `/opt/homebrew/share/android-commandlinetools` (platforms 35, 36; build-tools 35.0.0, 36.0.0). Gradle is **not** installed globally — use the wrapper. Disk is ~22 GB free: no emulator system-image downloads without asking.
 - No jargon in normal UI copy ("ADB", "package", "pm", "PSS" only inside Advanced/details).
 - Never run a command that changes the real TV (192.168.10.3) without the owner's explicit go-ahead. Read-only commands are allowed.
@@ -42,7 +42,7 @@ settings.gradle.kts, build.gradle.kts, gradle/libs.versions.toml, gradlew(+wrapp
 app/build.gradle.kts
 app/src/main/AndroidManifest.xml
 app/src/main/assets/catalog.json                    # Task 4
-app/src/main/java/dev/mntl/exbloattv/
+app/src/main/java/dev/xpdt/exbloattv/
   ExBloatApp.kt, MainActivity.kt                     # Task 1, 14
   adb/AdbClient.kt          # interface + errors      Task 5
   adb/DadbAdbClient.kt      # dadb impl + key mgmt     Task 5
@@ -60,7 +60,7 @@ app/src/main/java/dev/mntl/exbloattv/
   apps/AppLabelResolver.kt                                                   Task 12
   ui/theme/*, ui/components/*                                                Task 13
   ui/screens/*, ui/nav/*, service/CleanupService.kt, data/TvRepository.kt    Task 14
-app/src/test/java/dev/mntl/exbloattv/...            # mirrors main
+app/src/test/java/dev/xpdt/exbloattv/...            # mirrors main
 app/src/test/resources/mibox4-android9/              # copy of /fixtures/mibox4-android9 (Task 2)
 ```
 
@@ -69,8 +69,8 @@ app/src/test/resources/mibox4-android9/              # copy of /fixtures/mibox4-
 ### Task 1: Project scaffold, theme seed, build
 
 **Files:**
-- Create: `settings.gradle.kts`, `build.gradle.kts`, `gradle/libs.versions.toml`, `gradle/wrapper/*`, `gradlew`, `gradlew.bat`, `app/build.gradle.kts`, `app/proguard-rules.pro`, `app/src/main/AndroidManifest.xml`, `app/src/main/java/dev/mntl/exbloattv/ExBloatApp.kt`, `MainActivity.kt`, `app/src/main/res/values/strings.xml` (`app_name` = "ExBloat TV"), launcher icon (adaptive, simple TV-with-sparkle vector)
-- Test: `app/src/test/java/dev/mntl/exbloattv/SmokeTest.kt`
+- Create: `settings.gradle.kts`, `build.gradle.kts`, `gradle/libs.versions.toml`, `gradle/wrapper/*`, `gradlew`, `gradlew.bat`, `app/build.gradle.kts`, `app/proguard-rules.pro`, `app/src/main/AndroidManifest.xml`, `app/src/main/java/dev/xpdt/exbloattv/ExBloatApp.kt`, `MainActivity.kt`, `app/src/main/res/values/strings.xml` (`app_name` = "ExBloat TV"), launcher icon (adaptive, simple TV-with-sparkle vector)
+- Test: `app/src/test/java/dev/xpdt/exbloattv/SmokeTest.kt`
 
 **Interfaces:**
 - Produces: buildable app; `release` build type signed from `local.properties` keys `exbloat.storeFile`, `exbloat.storePassword`, `exbloat.keyAlias`, `exbloat.keyPassword` (keystore generated with `keytool` into `keystore/exbloattv.jks`, git-ignored).
