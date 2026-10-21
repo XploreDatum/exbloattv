@@ -1,14 +1,22 @@
 package dev.mntl.exbloattv.state
 
 import dev.mntl.exbloattv.adb.AdbClient
+import dev.mntl.exbloattv.adb.ShellResult
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import java.util.Base64
+import java.util.UUID
 
 /** The state file could not be written on the TV (non-zero exit from a write step). */
 class TvStateWriteException(val step: String, val exitCode: Int, detail: String) :
     Exception("could not write TV state ($step, exit $exitCode): $detail")
+
+/** The state file exists (or might) but could not be read; callers must not treat this as "empty". */
+class TvStateReadException(val exitCode: Int, detail: String) :
+    Exception("could not read TV state (exit $exitCode): $detail")
 
 /** Another phone holds a fresh run lock. */
 class TvLockedException(val byPhone: String, val at: Long) : Exception("TV is being cleaned by $byPhone")
@@ -62,7 +70,10 @@ class TvStateStore(
 
     private suspend fun loadLocked(serial: String): TvState {
         val r = adb.shell("cat $FILE")
-        if (r.exitCode != 0) return TvState(serial = serial) // missing file
+        if (r.exitCode != 0) {
+            if (r.output.contains("No such file", ignoreCase = true)) return TvState(serial = serial)
+            throw TvStateReadException(r.exitCode, r.output.trim().take(200))
+        }
         val parsed = try {
             json.decodeFromString<TvState>(r.output)
         } catch (e: Exception) {
@@ -71,30 +82,36 @@ class TvStateStore(
         }
         if (parsed != null && parsed.serial == serial) return parsed
         // Corrupted, or written for a different TV: keep it aside and start fresh.
-        adb.shell("mv $FILE $FILE.bad-${now()}")
+        val aside = adb.shell("mv $FILE $FILE.bad-${now()}")
+        if (aside.exitCode != 0) throw TvStateWriteException("set-aside", aside.exitCode, aside.output.trim().take(200))
         return TvState(serial = serial)
     }
 
     private suspend fun saveLocked(state: TvState) {
         val encoded = Base64.getEncoder().encodeToString(json.encodeToString(TvState.serializer(), state).toByteArray())
-        check(DIR, adb.shell("mkdir -p $DIR"), "mkdir")
-        // 32768 is a multiple of 4, so each chunk is independently valid base64.
-        val chunks = encoded.chunked(CHUNK).ifEmpty { listOf("") }
-        chunks.forEachIndexed { i, chunk ->
-            val redirect = if (i == 0) ">" else ">>"
-            check("write", adb.shell("echo $chunk | base64 -d $redirect $TMP"), "write")
+        // Unique per write so two phones writing at once never share a temp file.
+        val tmp = "$FILE.tmp.${now()}-${UUID.randomUUID().toString().take(8)}"
+        try {
+            requireOk(adb.shell("mkdir -p $DIR"), "mkdir")
+            // 32768 is a multiple of 4, so each chunk is independently valid base64.
+            encoded.chunked(CHUNK).forEachIndexed { i, chunk ->
+                requireOk(adb.shell("echo $chunk | base64 -d ${if (i == 0) ">" else ">>"} $tmp"), "write")
+            }
+            requireOk(adb.shell("mv $tmp $FILE"), "mv")
+        } catch (e: Throwable) {
+            // Best effort: never leave a half-written temp file behind, and never mask the real failure.
+            try { withContext(NonCancellable) { adb.shell("rm -f $tmp") } } catch (_: Exception) {}
+            throw e
         }
-        check("mv", adb.shell("mv $TMP $FILE"), "mv")
     }
 
-    private fun check(what: String, r: dev.mntl.exbloattv.adb.ShellResult, step: String) {
-        if (r.exitCode != 0) throw TvStateWriteException(step, r.exitCode, r.output.trim().take(200).ifEmpty { what })
+    private fun requireOk(r: ShellResult, step: String) {
+        if (r.exitCode != 0) throw TvStateWriteException(step, r.exitCode, r.output.trim().take(200))
     }
 
     companion object {
         const val DIR = "/data/local/tmp/exbloattv"
         const val FILE = "$DIR/state.json"
-        const val TMP = "$FILE.tmp"
         const val LOCK_EXPIRY_MS = 10 * 60 * 1000L
         private const val CHUNK = 32 * 1024
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }

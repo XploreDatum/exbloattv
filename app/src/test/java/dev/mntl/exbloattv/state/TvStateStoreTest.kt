@@ -14,7 +14,7 @@ import java.util.Base64
 
 class TvStateStoreTest {
     private val file = TvStateStore.FILE
-    private val tmp = TvStateStore.TMP
+    private val tmp = "$file.tmp"
     private val serial = "SER1"
     private var clock = 1_000_000L
     private val fs = mutableMapOf<String, String>()
@@ -45,6 +45,7 @@ class TvStateStoreTest {
             fs[m.groupValues[2]] = c
             return 0
         }
+        Regex("""^rm -f (\S+)$""").matchEntire(cmd)?.let { fs.remove(it.groupValues[1]); return 0 }
         error("unexpected command: $cmd")
     }
 
@@ -60,20 +61,21 @@ class TvStateStoreTest {
         val s = TvState(serial = serial, original = rp(), latest = rp("x"), changes = listOf(change("1")), lock = Lock("Pixel 8", 9))
         r { store.save(s) }
         assertEquals(s, r { store.load(serial) })
-        assertNull(fs[tmp])
+        assertTrue(fs.keys.none { it.contains(".tmp") })
     }
 
     @Test fun commandsAreExact() {
         r { store.save(TvState(serial = serial)) }
         assertEquals("mkdir -p ${TvStateStore.DIR}", fake.log[0])
-        assertTrue(fake.log[1].startsWith("echo ") && fake.log[1].endsWith(" | base64 -d > $tmp"))
-        assertEquals("mv $tmp $file", fake.log[2])
+        assertTrue(fake.log[1].startsWith("echo ") && fake.log[1].contains(" | base64 -d > $tmp."))
+        val t = fake.log[1].substringAfter("> ")
+        assertEquals("mv $t $file", fake.log[2])
     }
 
     @Test fun largeStateIsChunkedAndIntact() {
         val s = TvState(serial = serial, changes = (1..600).map { change("c$it") })
         r { store.save(s) }
-        assertTrue(fake.log.any { it.contains("base64 -d >> $tmp") })
+        assertTrue(fake.log.any { it.contains("base64 -d >> $tmp.") })
         assertTrue(fake.log.filter { it.startsWith("echo ") }.all { it.length < 33_000 })
         assertEquals(s, r { store.load(serial) })
     }
@@ -126,7 +128,7 @@ class TvStateStoreTest {
         val other = """{"version":1,"serial":"SER1","lock":{"byPhone":"Galaxy S24","at":$clock}}"""
         fake.onCommand = { cmd ->
             fake.exitCodes[cmd] = run(cmd)
-            if (armed && cmd.startsWith("mv $tmp")) { armed = false; fs[file] = other }
+            if (armed && cmd.startsWith("mv $tmp.")) { armed = false; fs[file] = other }
         }
         val res = r { store.acquireLock(serial, "Pixel 8") }
         assertEquals("Galaxy S24", (res.exceptionOrNull() as TvLockedException).byPhone)
@@ -155,7 +157,7 @@ class TvStateStoreTest {
     }
 
     @Test fun failedWriteStepThrows() {
-        fake.onCommand = { cmd -> fake.exitCodes[cmd] = if (cmd.startsWith("mv $tmp")) 1 else run(cmd) }
+        fake.onCommand = { cmd -> fake.exitCodes[cmd] = if (cmd.startsWith("mv $tmp.")) 1 else run(cmd) }
         try { r { store.save(TvState(serial = serial)) }; fail("expected TvStateWriteException") }
         catch (e: TvStateWriteException) { assertEquals("mv", e.step) }
     }
@@ -169,5 +171,52 @@ class TvStateStoreTest {
     @Test fun adbErrorPropagates() {
         fake.failNext("cat $file", AdbError.Disconnected())
         try { r { store.load(serial) }; fail("expected AdbError") } catch (_: AdbError.Disconnected) {}
+    }
+
+    @Test fun permissionDeniedOnReadThrowsAndWritesNothing() {
+        fs[file] = "precious"
+        fake.onCommand = { cmd -> if (cmd.startsWith("cat ")) { fake.responses[cmd] = "cat: $file: Permission denied"; fake.exitCodes[cmd] = 1 } else fake.exitCodes[cmd] = run(cmd) }
+        try { r { store.appendChange(serial, change("1")) }; fail("expected read exception") } catch (_: TvStateReadException) {}
+        assertEquals("precious", fs[file])
+        assertTrue(fake.log.none { it.startsWith("echo ") || it.startsWith("mv ") })
+    }
+
+    @Test fun failedSetAsideThrowsAndLeavesFileUntouched() {
+        fs[file] = "{not json"
+        fake.onCommand = { cmd -> fake.exitCodes[cmd] = if (cmd.startsWith("mv ")) 1 else run(cmd) }
+        try { r { store.load(serial) }; fail("expected write exception") } catch (e: TvStateWriteException) { assertEquals("set-aside", e.step) }
+        assertEquals("{not json", fs[file])
+    }
+
+    @Test fun interleavedSavesFromTwoPhonesEachProduceValidFile() {
+        val other = TvStateStore(fake) { clock }
+        val a = TvState(serial = serial, changes = (1..400).map { change("a$it") })
+        val b = TvState(serial = serial, changes = listOf(change("b")))
+        var fired = false
+        fake.onCommand = { cmd ->
+            fake.exitCodes[cmd] = run(cmd)
+            if (!fired && cmd.startsWith("echo ")) { fired = true; r { other.save(b) } }
+        }
+        r { store.save(a) }
+        assertEquals(a, r { store.load(serial) }) // A's mv came last
+        val temps = fake.log.filter { it.startsWith("mv ") && it.endsWith(" $file") }.map { it.split(" ")[1] }
+        assertEquals(2, temps.toSet().size)
+        assertTrue(fs.keys.none { it.contains(".tmp") })
+    }
+
+    @Test fun failedStepCleansUpItsTempFile() {
+        fake.onCommand = { cmd -> fake.exitCodes[cmd] = if (cmd.startsWith("mv ")) 1 else run(cmd) }
+        try { r { store.save(TvState(serial = serial)) } } catch (_: TvStateWriteException) {}
+        assertTrue(fake.log.last().startsWith("rm -f $tmp."))
+        assertTrue(fs.keys.none { it.contains(".tmp") })
+    }
+
+    @Test fun unicodePhoneNamesRoundTrip() {
+        val name = "Mithun's Pixel \u2728"
+        r { store.acquireLock(serial, name) }.getOrThrow()
+        r { store.appendChange(serial, change("1").copy(byPhone = name)) }
+        val s = r { store.load(serial) }
+        assertEquals(name, s.lock!!.byPhone)
+        assertEquals(name, s.changes.single().byPhone)
     }
 }
