@@ -548,7 +548,7 @@
    "pattern": "com.google.android.tvrecommendations",
    "category": "GOOGLE_EXTRAS",
    "name": "Recommendations",
-   "description": "The home screen shows fewer suggested shows",
+   "description": "Suggested-show rows on the stock home screen go empty",
    "defaultKeep": false
   },
   {
@@ -573,20 +573,6 @@
    "defaultKeep": false
   },
   {
-   "pattern": "com.google.android.tv.frameworkpackagestubs",
-   "category": "GOOGLE_EXTRAS",
-   "name": "Install stubs",
-   "description": "Placeholders for apps the TV may offer to install",
-   "defaultKeep": false
-  },
-  {
-   "pattern": "com.google.android.sss.authbridge",
-   "category": "GOOGLE_EXTRAS",
-   "name": "Sign-in bridge",
-   "description": "Helper for some Google sign-in screens",
-   "defaultKeep": false
-  },
-  {
    "pattern": "com.android.htmlviewer",
    "category": "GOOGLE_EXTRAS",
    "name": "HTML viewer",
@@ -596,8 +582,8 @@
   {
    "pattern": "com.mitv.tvhome.atv",
    "category": "MANUFACTURER",
-   "name": "Xiaomi home (PatchWall)",
-   "description": "Xiaomi's own home screen and suggestions",
+   "name": "Xiaomi home screen add-on",
+   "description": "Xiaomi's own rows and suggestions on the home screen",
    "defaultKeep": false
   },
   {
@@ -611,7 +597,7 @@
    "pattern": "com.xm.webcontent",
    "category": "MANUFACTURER",
    "name": "Xiaomi web content",
-   "description": "Xiaomi web pages and promotions",
+   "description": "Web pages and promotions shown inside Xiaomi's home screen",
    "defaultKeep": false
   },
   {
@@ -667,7 +653,7 @@
    "pattern": "com.tcl.dashboard",
    "category": "MANUFACTURER",
    "name": "TCL dashboard",
-   "description": "TCL's information panel",
+   "description": "TCL's status panel with weather and TV tips",
    "defaultKeep": false
   },
   {
@@ -722,8 +708,8 @@
   {
    "pattern": "com.tcl.guard",
    "category": "MANUFACTURER",
-   "name": "TCL guard",
-   "description": "TCL's background protection service",
+   "name": "TCL protection service",
+   "description": "TCL's built-in security scanner that runs in the background",
    "defaultKeep": false
   },
   {
@@ -744,14 +730,14 @@
    "pattern": "com.tcl.t_solo",
    "category": "MANUFACTURER",
    "name": "TCL Solo",
-   "description": "TCL's extra feature app",
+   "description": "TCL's extra apps and shortcuts on the home screen",
    "defaultKeep": false
   },
   {
    "pattern": "com.tcl.interactive",
    "category": "MANUFACTURER",
    "name": "TCL interactive",
-   "description": "TCL's interactive extras",
+   "description": "TCL's pop-up offers and interactive banners",
    "defaultKeep": false
   },
   {
@@ -854,16 +840,16 @@
   {
    "pattern": "com.enhance.gameservice",
    "category": "ADS_TRACKING",
-   "name": "Game service tracker",
-   "description": "Background tracking service",
+   "name": "Game usage tracker",
+   "description": "Collects which games you play and sends it to the TV maker",
    "defaultKeep": false,
    "locked": true
   },
   {
    "pattern": "com.android.mgstv",
    "category": "ADS_TRACKING",
-   "name": "MGS TV",
-   "description": "Background tracking service",
+   "name": "Usage tracker (MGS)",
+   "description": "Collects what you watch and sends it to the TV maker",
    "defaultKeep": false,
    "locked": true
   },
@@ -915,7 +901,7 @@
    "pattern": "com.apkmirror.helper.prod",
    "category": "SIDELOAD_TOOLS",
    "name": "APKMirror Installer",
-   "description": "Installs apps downloaded from APKMirror",
+   "description": "Installs app files you download from a mirror website",
    "defaultKeep": true
   },
   {

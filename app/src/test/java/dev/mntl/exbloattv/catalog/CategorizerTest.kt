@@ -149,13 +149,33 @@ class CategorizerTest {
     @Test fun catalogParsesWithNoDuplicatesAndPlainDescriptions() {
         assertTrue(catalog.entries.size >= 130)
         assertEquals(catalog.entries.size, catalog.entries.map { it.pattern }.toSet().size)
-        val banned = listOf("adb", "package", "pss")
+        val banned = listOf("adb", "package", "pss", "stub", "daemon", "apk")
+        val generic = setOf("service", "services", "extras", "extra", "app", "apps")
         catalog.entries.forEach { e ->
             assertTrue("${e.pattern} needs a description", e.description.isNotBlank())
             banned.forEach { assertFalse("${e.pattern}: $it", e.description.lowercase().contains(it)) }
+            val words = e.description.trim().split(Regex("\\s+"))
+            assertTrue("${e.pattern}: description needs at least 3 words", words.size >= 3)
+            assertFalse("${e.pattern}: description too generic", words.all { it.lowercase().trim('.', ',') in generic })
             if (e.category == Category.ADS_TRACKING) { assertTrue(e.locked); assertFalse(e.defaultKeep) }
             assertNotNull(e.name)
         }
+    }
+
+    @Test fun googleHelpersWithoutCatalogEntryStayHiddenSystemOnMiBox() {
+        val system = dev.mntl.exbloattv.tv.Parsers.packageNames(File("src/test/resources/mibox4-android9/pm_list_system.txt").readText())
+        val all = dev.mntl.exbloattv.tv.Parsers.pmListLines(File("src/test/resources/mibox4-android9/pm_list_all.txt").readText()).map { it.first }.toSet()
+        val apps = categorizer.categorize(inv(*all.map { pkg(it, it in system) }.toTypedArray()))
+        for (n in listOf("com.google.android.sss.authbridge", "com.google.android.tv.frameworkpackagestubs")) {
+            assertTrue("$n on fixture", n in all)
+            assertEquals(n, Category.SYSTEM, apps.single { it.pkg.name == n }.category)
+        }
+    }
+
+    @Test fun recommendationsDescriptionStatesRealEffect() {
+        val r = one("com.google.android.tvrecommendations")
+        assertEquals(Category.GOOGLE_EXTRAS, r.category); assertFalse(r.defaultKeep)
+        assertEquals("Suggested-show rows on the stock home screen go empty", r.description)
     }
 
     @Test fun everySeedEntryIsCatalogued() {
