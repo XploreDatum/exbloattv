@@ -61,8 +61,6 @@ class TvRepository(private val store: DataStore<Preferences>, private val model:
         return result!!
     }
 
-    suspend fun updateHost(serial: String, host: String) = update(serial) { it.copy(lastHost = host) }
-
     suspend fun markCleaned(serial: String, at: Long) = update(serial) { it.copy(lastCleanedAt = at) }
 
     suspend fun forget(serial: String) {

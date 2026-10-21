@@ -30,29 +30,25 @@ class FindViewModelTest {
     private val miBox = RememberedTv("S1", "Mi Box 4", "192.168.10.3", 1_000L)
     private val bedroom = RememberedTv("S2", "Bedroom TV", "192.168.10.17", null)
 
-    @Test fun mergesRememberedTvsBySerialAndMarksANewAddress() = runTest(dispatcher) {
-        val serials = mapOf("192.168.10.40" to "S1", "192.168.10.50" to "SOMEONE-ELSE")
-        val probed = mutableListOf<String>()
-        val moved = mutableListOf<Pair<String, String>>()
+    @Test fun recognisesRememberedTvsByAddressOrAnnouncedNameAndNeverConnects() = runTest(dispatcher) {
         val vm = FindViewModel(
             remembered = MutableStateFlow(listOf(miBox, bedroom)),
             wifiAvailable = { true },
             scan = {
                 flowOf(
                     FoundTv("192.168.10.17", TvReadiness.NEEDS_SETUP),
-                    FoundTv("192.168.10.40", TvReadiness.READY, "Living room"),
+                    FoundTv("192.168.10.40", TvReadiness.READY, "mi box 4 "), // the Mi Box at a new address
                     FoundTv("192.168.10.50", TvReadiness.READY),
+                    FoundTv("192.168.10.60", TvReadiness.READY, "Mi Box 4"), // same name again: only one can be it
                 )
             },
-            serialAt = { host -> probed += host; serials[host] },
-            onMoved = { serial, host -> moved += serial to host },
         )
         advanceUntilIdle()
         val s = vm.state.value
         assertFalse(s.scanning)
         assertFalse(s.nothingFound)
         val byHost = s.rows.associateBy { it.host }
-        assertEquals(setOf("192.168.10.17", "192.168.10.40", "192.168.10.50"), byHost.keys)
+        assertEquals(setOf("192.168.10.17", "192.168.10.40", "192.168.10.50", "192.168.10.60"), byHost.keys)
 
         val bed = byHost.getValue("192.168.10.17")
         assertEquals("S2", bed.rememberedSerial)
@@ -65,29 +61,24 @@ class FindViewModelTest {
         assertEquals("Mi Box 4", box.name)
         assertEquals("192.168.10.3", box.movedFrom)
 
-        val other = byHost.getValue("192.168.10.50")
-        assertNull(other.rememberedSerial)
-        assertNull(other.movedFrom)
-
-        assertEquals(listOf("S1" to "192.168.10.40"), moved)
-        // A TV that needs setup can't be asked for its serial.
-        assertTrue("192.168.10.17" !in probed)
+        for (h in listOf("192.168.10.50", "192.168.10.60")) {
+            assertNull(byHost.getValue(h).rememberedSerial)
+            assertNull(byHost.getValue(h).movedFrom)
+        }
         // Remembered TVs come first.
-        assertEquals("S1", s.rows.first().rememberedSerial ?: s.rows[1].rememberedSerial)
+        assertTrue(s.rows.take(2).all { it.rememberedSerial != null })
     }
 
-    @Test fun noProbingWhenEveryRememberedTvIsAtItsAddress() = runTest(dispatcher) {
-        val probed = mutableListOf<String>()
+    @Test fun sameAddressWinsOverName() = runTest(dispatcher) {
         val vm = FindViewModel(
             remembered = MutableStateFlow(listOf(miBox)),
             wifiAvailable = { true },
-            scan = { flowOf(FoundTv("192.168.10.3", TvReadiness.READY), FoundTv("192.168.10.9", TvReadiness.READY)) },
-            serialAt = { probed += it; null },
-            onMoved = { _, _ -> error("not moved") },
+            scan = { flowOf(FoundTv("192.168.10.3", TvReadiness.READY), FoundTv("192.168.10.9", TvReadiness.READY, "Mi Box 4")) },
         )
         advanceUntilIdle()
-        assertTrue(probed.isEmpty())
-        assertEquals("S1", vm.state.value.rows.first { it.host == "192.168.10.3" }.rememberedSerial)
+        val rows = vm.state.value.rows.associateBy { it.host }
+        assertEquals("S1", rows.getValue("192.168.10.3").rememberedSerial)
+        assertNull(rows.getValue("192.168.10.9").rememberedSerial) // the remembered TV is already placed
     }
 
     @Test fun noWifiMeansNoScan() = runTest(dispatcher) {
@@ -96,8 +87,6 @@ class FindViewModelTest {
             remembered = MutableStateFlow(emptyList()),
             wifiAvailable = { false },
             scan = { scanned = true; flowOf() },
-            serialAt = { null },
-            onMoved = { _, _ -> },
         )
         advanceUntilIdle()
         assertFalse(vm.state.value.wifi)
@@ -110,8 +99,6 @@ class FindViewModelTest {
             remembered = MutableStateFlow(emptyList()),
             wifiAvailable = { true },
             scan = { if (round++ == 0) flowOf() else flowOf(FoundTv("10.0.0.5", TvReadiness.READY)) },
-            serialAt = { null },
-            onMoved = { _, _ -> },
         )
         advanceUntilIdle()
         assertTrue(vm.state.value.nothingFound)

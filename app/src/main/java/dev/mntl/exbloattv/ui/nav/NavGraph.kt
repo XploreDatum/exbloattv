@@ -16,7 +16,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.mntl.exbloattv.AppGraph
-import dev.mntl.exbloattv.adb.AdbConnector
 import dev.mntl.exbloattv.data.SavedChoices
 import dev.mntl.exbloattv.discovery.SocketPortProbe
 import dev.mntl.exbloattv.discovery.TvReadiness
@@ -61,14 +60,6 @@ object Routes {
     private fun enc(s: String) = android.net.Uri.encode(s)
 }
 
-/** Reads a TV's serial without changing anything; only works silently on TVs that already allowed this phone. */
-private suspend fun serialAt(connector: AdbConnector, host: String): String? =
-    connector.connect(host, authTimeoutMs = 3_000).use { adb ->
-        listOf("ro.serialno", "ro.boot.serialno").firstNotNullOfOrNull { prop ->
-            adb.shell("getprop $prop").output.trim().takeIf { it.isNotBlank() }
-        }
-    }
-
 @Composable
 fun ExBloatNavGraph(graph: AppGraph) {
     val nav = rememberNavController()
@@ -109,8 +100,6 @@ fun ExBloatNavGraph(graph: AppGraph) {
                         remembered = graph.repository.tvs,
                         wifiAvailable = { graph.discovery.phoneWifiIpv4() != null },
                         scan = { graph.discovery.scan() },
-                        serialAt = { serialAt(graph.connector, it) },
-                        onMoved = { serial, host -> graph.repository.updateHost(serial, host) },
                     )
                 },
                 onBack = backOrNull(nav),
