@@ -152,6 +152,24 @@ class CleanupWorkTest {
         assertTrue(cleanedAt != null)
     }
 
+    @Test fun aJournalThatCantWriteNeverStopsTheJob() = runTest {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        val work = CleanupWork(
+            connector = offTv,
+            phoneName = { "Pixel · ab12" },
+            swapFor = { store, phone -> LauncherSwap(ApkDownloader(OkHttpClient(), File("build/tmp-apk")), store, phone) },
+            appScope = appScope,
+            journal = object : JobJournal {
+                override suspend fun started(job: ActiveJob) = throw java.io.IOException("disk full")
+                override suspend fun ended() = throw java.io.IOException("disk full")
+            },
+        )
+        assertTrue(work.startUndo(UndoRequest("S", "192.168.10.3", "Mi Box 4")))
+        advanceUntilIdle()
+        assertEquals(UndoProblem.UNREACHABLE, (work.state.value as WorkState.UndoFailed).problem)
+        appScope.cancel()
+    }
+
     @Test fun changedElsewhereIsRecognised() {
         assertTrue(isChangedElsewhere(CleanupRunner.CHANGED_ELSEWHERE_MESSAGE))
         assertFalse(isChangedElsewhere("Couldn't switch this app off"))

@@ -194,12 +194,18 @@ class CleanupWork(
         running = currentCoroutineContext()[kotlinx.coroutines.Job]
         abandoned = false
         try {
-            journal.started(
-                when (job) {
-                    is Job.Clean -> ActiveJob(job.request.serial, ActiveJob.Kind.CLEAN, now(), job.request.tvName, job.request.host)
-                    is Job.UndoAll -> ActiveJob(job.request.serial, ActiveJob.Kind.UNDO, now(), job.request.tvName, job.request.host)
-                },
-            )
+            val record = when (job) {
+                is Job.Clean -> ActiveJob(job.request.serial, ActiveJob.Kind.CLEAN, now(), job.request.tvName, job.request.host)
+                is Job.UndoAll -> ActiveJob(job.request.serial, ActiveJob.Kind.UNDO, now(), job.request.tvName, job.request.host)
+            }
+            // Only a note for later; a storage problem must never stop the job itself.
+            try {
+                journal.started(record)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // ignored
+            }
             when (job) {
                 is Job.Clean -> clean(job.request)
                 is Job.UndoAll -> undo(job.request)

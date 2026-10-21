@@ -1,8 +1,6 @@
 package dev.mntl.exbloattv.discovery
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import kotlinx.coroutines.channels.Channel
@@ -19,20 +17,16 @@ import kotlin.coroutines.resume
 /** Finds TVs on the phone's Wi-Fi: a port scan of the local /24 plus mDNS, merged by address. */
 class Discovery(
     private val context: Context,
-    private val probe: PortProbe = SocketPortProbe,
+    private val wifi: WifiNetworkProvider,
+    private val probe: PortProbe = SocketPortProbe(wifi::bind),
     private val scanner: SubnetScanner = SubnetScanner(probe),
 ) {
 
-    /** The phone's Wi-Fi IPv4 address and prefix length, or null when not on Wi-Fi. */
-    fun phoneWifiIpv4(): Pair<String, Int>? {
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
-        val net = cm.activeNetwork ?: return null
-        val caps = cm.getNetworkCapabilities(net) ?: return null
-        if (!caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) return null
-        val addr = cm.getLinkProperties(net)?.linkAddresses
-            ?.firstOrNull { it.address is Inet4Address } ?: return null
-        return addr.address.hostAddress!! to addr.prefixLength
-    }
+    /**
+     * The phone's Wi-Fi IPv4 address and prefix length, or null when not on Wi-Fi. Looks at every network, not just
+     * the default one: Wi-Fi without internet (or not yet validated) is still the TV's network.
+     */
+    fun phoneWifiIpv4(): Pair<String, Int>? = wifi.refresh()?.let { it.ipv4 to it.prefix }
 
     fun scan(): Flow<FoundTv> = callbackFlow {
         val phone = phoneWifiIpv4()

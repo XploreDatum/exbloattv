@@ -21,7 +21,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dev.mntl.exbloattv.AppGraph
 import dev.mntl.exbloattv.data.SavedChoices
-import dev.mntl.exbloattv.discovery.SocketPortProbe
 import dev.mntl.exbloattv.discovery.TvReadiness
 import dev.mntl.exbloattv.service.CleanupRequest
 import dev.mntl.exbloattv.service.UndoRequest
@@ -80,7 +79,7 @@ fun ExBloatNavGraph(graph: AppGraph) {
     NavHost(nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
             HomeScreen(
-                vm = viewModel { HomeViewModel(graph.repository.tvs, graph.repository.activeJob, SocketPortProbe) },
+                vm = viewModel { HomeViewModel(graph.repository.tvs, graph.repository.activeJob, graph.portProbe) },
                 work = work,
                 onAddTv = { nav.navigate(Routes.FIND) },
                 onOpenTv = { nav.navigate(Routes.tv(it)) },
@@ -126,7 +125,7 @@ fun ExBloatNavGraph(graph: AppGraph) {
             DebugStepsScreen(
                 host = host,
                 tvName = graph.session.hostNames[host],
-                probe = SocketPortProbe,
+                probe = graph.portProbe,
                 onBack = { nav.popBackStack() },
                 onReady = { nav.navigate(Routes.approve(host)) { popUpTo(Routes.DEBUG) { inclusive = true } } },
             )

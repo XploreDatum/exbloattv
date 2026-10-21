@@ -49,7 +49,11 @@ data class ActiveJob(
 private val Context.tvStore: DataStore<Preferences> by preferencesDataStore(name = "tvs")
 
 /** Remembered TVs, last choices per TV and this phone's identity, kept in DataStore. */
-class TvRepository(private val store: DataStore<Preferences>, private val model: String = Build.MODEL ?: "Phone") {
+class TvRepository(
+    private val store: DataStore<Preferences>,
+    private val model: String = Build.MODEL ?: "Phone",
+    private val now: () -> Long = System::currentTimeMillis,
+) {
 
     constructor(context: Context) : this(context.applicationContext.tvStore)
 
@@ -79,13 +83,26 @@ class TvRepository(private val store: DataStore<Preferences>, private val model:
         store.edit { prefs ->
             prefs[TVS] = encode(decodeTvs(prefs[TVS]).filterNot { it.serial == serial })
             prefs.remove(choicesKey(serial))
+            if (decodeJob(prefs[ACTIVE_JOB])?.serial == serial) prefs.remove(ACTIVE_JOB)
         }
     }
 
     /** The job running now, or one the app was killed in the middle of (when nothing is running). */
-    val activeJob: Flow<ActiveJob?> = store.data.map { prefs ->
-        prefs[ACTIVE_JOB]?.let { runCatching { json.decodeFromString(ActiveJob.serializer(), it) }.getOrNull() }
+    val activeJob: Flow<ActiveJob?> = store.data.map { prefs -> decodeJob(prefs[ACTIVE_JOB])?.takeUnless { isStale(it) } }
+
+    /** Drops a record too old to mean anything (no job runs anywhere near this long), or one that can't be read. */
+    suspend fun clearStaleActiveJob() {
+        store.edit { prefs ->
+            val raw = prefs[ACTIVE_JOB] ?: return@edit
+            val job = decodeJob(raw)
+            if (job == null || isStale(job)) prefs.remove(ACTIVE_JOB)
+        }
     }
+
+    private fun decodeJob(raw: String?): ActiveJob? =
+        raw?.let { runCatching { json.decodeFromString(ActiveJob.serializer(), it) }.getOrNull() }
+
+    private fun isStale(job: ActiveJob) = now() - job.startedAt > ACTIVE_JOB_MAX_AGE_MS
 
     suspend fun setActiveJob(job: ActiveJob) {
         store.edit { it[ACTIVE_JOB] = json.encodeToString(ActiveJob.serializer(), job) }
@@ -141,5 +158,6 @@ class TvRepository(private val store: DataStore<Preferences>, private val model:
         val INSTALL_ID = stringPreferencesKey("install_id")
         val ACTIVE_JOB = stringPreferencesKey("active_job")
         val NEARBY_ASKED = stringPreferencesKey("nearby_asked")
+        const val ACTIVE_JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000L
     }
 }

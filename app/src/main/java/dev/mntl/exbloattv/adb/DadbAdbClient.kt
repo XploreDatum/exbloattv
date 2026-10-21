@@ -107,11 +107,18 @@ internal class OwnedDadb(
     }
 }
 
-class DadbConnector internal constructor(private val keys: () -> AdbKeyPair) : AdbConnector {
+/**
+ * [bind] is called on each new socket before it connects; the app uses it to route TV connections over the phone's
+ * Wi-Fi even when Android's default network is mobile data. The default leaves the socket unbound.
+ */
+class DadbConnector internal constructor(
+    private val keys: () -> AdbKeyPair,
+    private val bind: (Socket) -> Unit = {},
+) : AdbConnector {
 
-    constructor(context: Context) : this({
+    constructor(context: Context, bind: (Socket) -> Unit = {}) : this({
         AdbKeys.loadOrCreate(File(context.filesDir, "adb"), "exbloattv@${Build.MODEL}")
-    })
+    }, bind)
 
     override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient {
         val keyPair = withContext(Dispatchers.IO) { keys() }
@@ -120,6 +127,7 @@ class DadbConnector internal constructor(private val keys: () -> AdbKeyPair) : A
         // interrupted. We own the socket, so on timeout/cancel/error we close it, which fails the read
         // immediately and frees the thread; a late approval then finds a closed socket.
         val work = CoroutineScope(SupervisorJob() + Dispatchers.IO).async {
+            bind(socket)
             socket.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
             socket.keepAlive = true
             RawAdbConnection.connect(socket, keyPair)

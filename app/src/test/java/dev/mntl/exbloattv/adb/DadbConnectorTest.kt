@@ -42,6 +42,21 @@ class DadbConnectorTest {
 
     private fun deadPort(): Int = ServerSocket(0).use { it.localPort }
 
+    @Test fun everySocketIsBoundBeforeItConnects() = runBlocking<Unit> {
+        val seen = mutableListOf<Boolean>()
+        val bound = DadbConnector({ AdbKeys.loadOrCreate(File(tmp.root, "adb2"), "test") }, { s -> seen += s.isConnected })
+        val port = silentServer()
+        val e = runCatching { bound.connect("127.0.0.1", port, 500) }.exceptionOrNull()
+        assertThat(e).isInstanceOf(AdbError.Unauthorized::class.java)
+        assertThat(seen).containsExactly(false) // once, before connecting
+    }
+
+    @Test fun aBinderThatFailsIsAConnectionFailureNotACrash() = runBlocking {
+        val bound = DadbConnector({ AdbKeys.loadOrCreate(File(tmp.root, "adb3"), "test") }, { throw java.net.ConnectException("Wi-Fi gone") })
+        val e = runCatching { bound.connect("127.0.0.1", silentServer(), 2_000) }.exceptionOrNull()
+        assertThat(e).isInstanceOf(AdbError::class.java)
+    }
+
     @Test fun refusedPortIsRefused() = runBlocking {
         val e = runCatching { connector.connect("127.0.0.1", deadPort(), 5_000) }.exceptionOrNull()
         assertThat(e).isInstanceOf(AdbError.Refused::class.java)

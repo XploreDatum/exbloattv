@@ -17,8 +17,38 @@ import org.junit.rules.TemporaryFolder
 class TvRepositoryTest {
     @get:Rule val tmp = TemporaryFolder()
 
+    private var clock = 1_000_000_000L
+
     private fun repo(scope: CoroutineScope, model: String = "Pixel 9", file: File = File(tmp.root, "tvs.preferences_pb")) =
-        TvRepository(PreferenceDataStoreFactory.create(scope = scope) { file }, model)
+        TvRepository(PreferenceDataStoreFactory.create(scope = scope) { file }, model) { clock }
+
+    @Test fun forgettingATvClearsItsInterruptedJob() = runTest {
+        val scope = CoroutineScope(coroutineContext + Job())
+        val r = repo(scope)
+        r.remember("S1", "Mi Box 4", "192.168.10.3")
+        r.setActiveJob(ActiveJob("S1", ActiveJob.Kind.CLEAN, clock, "Mi Box 4", "192.168.10.3"))
+        r.forget("S2") // another TV: kept
+        assertEquals("S1", r.activeJob.first()?.serial)
+        r.forget("S1")
+        assertEquals(null, r.activeJob.first())
+        scope.cancel()
+    }
+
+    @Test fun jobRecordsOlderThanADayAreIgnoredAndCleared() = runTest {
+        val scope = CoroutineScope(coroutineContext + Job())
+        val r = repo(scope)
+        r.setActiveJob(ActiveJob("S1", ActiveJob.Kind.UNDO, clock, "Mi Box 4", "h"))
+        clock += 23 * 3_600_000L
+        assertEquals("S1", r.activeJob.first()?.serial)
+        r.clearStaleActiveJob()
+        assertEquals("S1", r.activeJob.first()?.serial) // still fresh: kept
+        clock += 2 * 3_600_000L
+        assertEquals(null, r.activeJob.first())
+        r.clearStaleActiveJob()
+        clock -= 25 * 3_600_000L // even if the clock went back, the record is gone
+        assertEquals(null, r.activeJob.first())
+        scope.cancel()
+    }
 
     @Test fun aRememberedTvAtANewAddressIsMergedBySerial() = runTest {
         val scope = CoroutineScope(coroutineContext + Job())

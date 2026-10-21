@@ -22,12 +22,19 @@ fun interface PortProbe {
     suspend fun isOpen(host: String, port: Int, timeoutMs: Int): Boolean
 }
 
-/** Real probe: a plain TCP connect with a hard timeout. */
-object SocketPortProbe : PortProbe {
+/**
+ * Real probe: a plain TCP connect with a hard timeout. [bind] routes the socket over the phone's Wi-Fi (see
+ * [WifiNetworkProvider.bind]) so probes never go out over mobile data; it is a no-op in tests.
+ */
+class SocketPortProbe(private val bind: (Socket) -> Unit = {}) : PortProbe {
     override suspend fun isOpen(host: String, port: Int, timeoutMs: Int): Boolean =
         withContext(ProbeDispatcher) {
             try {
-                Socket().use { it.connect(InetSocketAddress(host, port), timeoutMs); true }
+                Socket().use {
+                    bind(it)
+                    it.connect(InetSocketAddress(host, port), timeoutMs)
+                    true
+                }
             } catch (_: Exception) {
                 false
             }
