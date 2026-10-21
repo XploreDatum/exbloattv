@@ -32,7 +32,6 @@ class SafetyGuardTest {
     private val seedExtras = listOf(
         "com.android.tethering", "com.android.tethering.x", "com.google.android.modulemetadata",
         "com.google.android.overlay.x", "com.foo.providers.config", "com.tvos",
-        "com.spocky.projengmenu", "me.efesser.flauncher",
     )
 
     private val notProtected = listOf(
@@ -116,6 +115,14 @@ class SafetyGuardTest {
         assertTrue(SafetyGuard.isProtected(l, activeLauncher = l, replacementVerified = false))
         assertFalse(SafetyGuard.isProtected(l, activeLauncher = l, replacementVerified = true))
         assertFalse(SafetyGuard.isProtected("com.netflix.ninja", activeLauncher = l))
+    }
+
+    @Test fun launchersAreOnlyProtectedWhileActiveAndUnreplaced() {
+        listOf("me.efesser.flauncher", "com.spocky.projengmenu", "com.google.android.tvlauncher").forEach { l ->
+            assertFalse(l, SafetyGuard.isProtected(l))
+            assertTrue(l, SafetyGuard.isProtected(l, activeLauncher = l, replacementVerified = false))
+            assertFalse(l, SafetyGuard.isProtected(l, activeLauncher = l, replacementVerified = true))
+        }
     }
 
     @Test fun neverListHasNoBlankEntries() {

@@ -47,8 +47,6 @@ object SafetyGuard {
         "com.google.android.overlay.*",
         "*.providers.config",
         "com.tvos",
-        "com.spocky.projengmenu",
-        "me.efesser.flauncher",
     )
 
     private val REMOTE_INPUT: List<String> = listOf(
@@ -67,7 +65,12 @@ object SafetyGuard {
 
     private fun matchesAny(globs: List<String>, pkg: String) = globs.any { regexFor(it).matches(pkg) }
 
-    /** True if [pkg] must not be disabled/uninstalled. The active launcher is spared once a replacement is verified. */
+    /**
+     * True if [pkg] must not be disabled/uninstalled.
+     * [activeLauncher] is the package currently resolving HOME; it is protected until
+     * [replacementVerified] is true. Launchers are deliberately not in [NEVER], so a stale
+     * launcher that is not the active one (e.g. FLauncher during Undo) can be removed.
+     */
     fun isProtected(pkg: String, activeLauncher: String? = null, replacementVerified: Boolean = false): Boolean {
         if (matchesAny(NEVER, pkg) || isRemoteInput(pkg)) return true
         return activeLauncher != null && pkg == activeLauncher && !replacementVerified
