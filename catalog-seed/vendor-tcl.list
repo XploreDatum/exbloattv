@@ -1,0 +1,29 @@
+# TCL bloatware. Verified on a TCL G10 (Android 12 / Google TV).
+# Other TCL models are similar; check your own inventory first.
+
+com.tcl.waterfall.overseas    # ad / sponsored-content engine. Biggest win.
+com.tcl.dashboard
+com.tcl.exhibit                # in-store demo mode
+com.tcl.factory.view           # factory test menu
+com.tcl.esticker               # store demo stickers
+com.tcl.ocean.instructions
+com.tcl.repairguide
+com.tcl.useragreement
+com.tcl.usercenter             # TCL account
+com.tcl.logkit                 # telemetry / log upload
+com.tcl.guard
+com.tcl.messagebox             # TCL push notifications (ads)
+com.tcl.channelplus            # TCL free-channel storefront
+com.tcl.t_solo
+com.tcl.interactive
+com.tcl.gamebar
+com.tcl.hearaid
+com.tcl.smartalexa             # built-in Alexa
+com.tcl.magiconnectfree
+com.tcl.suspension
+com.tcl.partnercustomizer
+com.tcl.ui_mediaCenter
+com.tcl.ttvs                   # "TTVSCore": watches PACKAGE_ADDED/REMOVED/BOOT. Analytics.
+
+# Keep com.tcl.tv and com.tcl.tvinput if you use the built-in tuner (antenna/cable).
+# com.tcl.tv

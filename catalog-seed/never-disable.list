@@ -1,0 +1,51 @@
+# NEVER disable these. debloat.sh refuses them even if another list asks.
+# Globs are allowed.
+
+# --- Android core ---
+android
+com.android.systemui
+com.android.settings*
+com.android.tv.settings*
+com.android.providers.settings
+com.android.providers.media*
+com.android.packageinstaller
+com.android.shell
+com.android.bluetooth
+com.android.networkstack*
+com.android.wifi*
+com.android.tethering*
+com.android.se
+com.android.keychain
+com.android.certinstaller
+
+# --- Google core (Play Store, services, WebView) ---
+com.android.vending
+com.google.android.gms
+com.google.android.gsf
+com.google.android.webview
+com.google.android.packageinstaller
+com.google.android.permissioncontroller
+com.google.android.ext.services
+com.google.android.ext.shared
+com.google.android.modulemetadata
+com.google.android.overlay.*
+
+# --- Input: lose these and the remote stops working ---
+com.google.android.tv.remote.service
+com.google.android.inputmethod.latin
+*.inputmethod.*
+*.globalkeyoverlay
+*.autopair
+
+# --- Vendor system services and SoC drivers ---
+*.systemserver
+*.providers.config
+*.tvinput
+com.realtek.*
+com.mediatek.*
+com.amlogic.*
+com.tvos
+
+# --- Your launcher. Disabling it with no replacement = black screen ---
+com.spocky.projengmenu
+me.efesser.flauncher

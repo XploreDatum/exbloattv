@@ -1,0 +1,6 @@
+TAKE_AUDIO_FOCUS: allow; time=+169d18h17m11s591ms ago
+WAKE_LOCK: allow; time=+1h2m11s683ms ago; duration=+6s978ms
+READ_EXTERNAL_STORAGE: allow; time=+26m56s262ms ago
+WRITE_EXTERNAL_STORAGE: allow; time=+26m56s262ms ago
+RUN_IN_BACKGROUND: ignore
+RUN_ANY_IN_BACKGROUND: ignore

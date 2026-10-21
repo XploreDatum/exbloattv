@@ -1,0 +1,10 @@
+# Tracking and ACR (automatic content recognition). ACR samples what is on your
+# screen — including HDMI input — and sells the profile to advertisers.
+# Disabling these costs you nothing.
+
+tv.samba.ssm.ui               # Samba TV — ACR
+com.samba.tv
+com.inscape.tv                # Inscape (Vizio) — ACR
+com.alphonso.service          # Alphonso — audio ACR
+com.enhance.gameservice
+com.android.mgstv

@@ -1,0 +1,276 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..900&family=Roboto+Flex:opsz,wght@8..144,400..900&display=swap');
+.m3 { font-family:"Google Sans Flex","Roboto Flex",Roboto,system-ui,sans-serif; }
+.theme { border-radius:28px; padding:24px; margin-bottom:28px; cursor:pointer; border:2px solid transparent; }
+.theme.selected { border-color:#3b82f6; }
+.theme h3 { margin:0 0 4px; font-size:20px; } .theme .why { margin:0 0 18px; font-size:14px; opacity:.75; max-width:760px; }
+.row4 { display:flex; gap:22px; overflow-x:auto; padding:6px 4px 12px; }
+
+/* Pixel frame */
+.px { flex:0 0 276px; height:660px; border-radius:40px; position:relative; overflow:hidden; box-sizing:border-box; display:flex; flex-direction:column; line-height:1.3; }
+.px .cam { position:absolute; top:12px; left:50%; width:11px; height:11px; margin-left:-5px; border-radius:50%; background:#111; z-index:3; }
+.px .sb { display:flex; justify-content:space-between; align-items:center; font-size:12px; font-weight:500; padding:10px 22px 0; height:22px; }
+.px .sb .ic { display:flex; gap:5px; align-items:center; }
+.px .nav { height:22px; display:grid; place-items:center; } .px .nav i { width:96px; height:4px; border-radius:2px; display:block; }
+.px .bd { flex:1; display:flex; flex-direction:column; padding:6px 18px 8px; }
+.grow { flex:1; }
+.ttl { font-size:34px; font-weight:560; letter-spacing:-.01em; line-height:1.08; margin:14px 0 8px; font-variation-settings:"ROND" 100; }
+.sup { font-size:14px; line-height:1.45; margin:0 0 18px; }
+.lbl { font-size:12px; font-weight:600; letter-spacing:.02em; margin:14px 4px 8px; }
+
+/* list in a rounded container (M3 expressive segmented list) */
+.lst { display:flex; flex-direction:column; gap:3px; }
+.li { display:flex; align-items:center; gap:14px; padding:12px 14px; border-radius:6px; font-size:15.5px; font-weight:500; }
+.lst .li:first-child { border-radius:24px 24px 6px 6px; } .lst .li:last-child { border-radius:6px 6px 24px 24px; } .lst .li:only-child { border-radius:24px; }
+.li small { display:block; font-size:12.5px; font-weight:400; margin-top:1px; }
+.lead { width:40px; height:40px; flex:0 0 40px; display:grid; place-items:center; border-radius:50%; }
+.app { width:40px; height:40px; flex:0 0 40px; border-radius:12px; display:grid; place-items:center; color:#fff; font-weight:800; overflow:hidden; }
+
+/* M3 switch */
+.sw { margin-left:auto; width:52px; height:32px; flex:0 0 52px; border-radius:16px; box-sizing:border-box; position:relative; }
+.sw::after { content:""; position:absolute; border-radius:50%; transition:all .2s; }
+.sw.off::after { width:16px; height:16px; top:6px; left:6px; }
+.sw.on::after { width:24px; height:24px; top:4px; left:24px; }
+.sw.on svg { position:absolute; top:8px; left:28px; z-index:2; }
+
+/* buttons */
+.btn { height:56px; border-radius:28px; display:grid; place-items:center; font-size:16px; font-weight:600; letter-spacing:.01em; }
+.tbtn { text-align:center; font-size:14.5px; font-weight:600; padding:12px; }
+
+/* TV cards */
+.tv { display:flex; align-items:center; gap:14px; padding:14px; border-radius:24px; margin-bottom:8px; }
+.tv b { display:block; font-size:16px; font-weight:600; } .tv small { font-size:12.5px; }
+.chip { margin-left:auto; font-size:12px; font-weight:600; padding:6px 12px; border-radius:10px; }
+.scan { height:150px; display:grid; place-items:center; position:relative; margin:4px 0 10px; }
+
+/* steps */
+.step { display:flex; gap:14px; padding:13px 14px; border-radius:6px; align-items:flex-start; font-size:14.5px; line-height:1.4; }
+.lst .step:first-child { border-radius:24px 24px 6px 6px; } .lst .step:last-child { border-radius:6px 6px 24px 24px; }
+.num { width:28px; height:28px; flex:0 0 28px; border-radius:50%; display:grid; place-items:center; font-size:13px; font-weight:700; }
+.kbd { font-weight:700; }
+.wait { display:flex; align-items:center; gap:10px; font-size:13.5px; margin:14px 4px 0; }
+
+/* done */
+.hero { display:grid; place-items:center; margin:18px 0 6px; position:relative; }
+.stat { display:flex; justify-content:space-between; align-items:center; padding:15px 16px; border-radius:6px; font-size:15px; }
+.lst .stat:first-child { border-radius:24px 24px 6px 6px; } .lst .stat:last-child { border-radius:6px 6px 24px 24px; }
+.stat b { font-weight:650; }
+
+/* ============ LIGHT (dynamic colour from a green wallpaper) ============ */
+.L { background:#e8eee6; color:#191d18; }
+.L .px { background:#f6fbf3; color:#181d17; box-shadow:0 0 0 8px #202421, 0 30px 60px -24px rgba(0,0,0,.45); margin:10px; }
+.L .nav i { background:#181d17; opacity:.85; }
+.L .sup, .L .li small, .L .tv small, .L .wait { color:#424940; }
+.L .lbl { color:#386a20; }
+.L .li, .L .step, .L .stat { background:#ebefe7; }
+.L .lead { background:#bcf0b4; color:#002204; }
+.L .sw.off { border:2px solid #72796f; background:#dfe4da; } .L .sw.off::after { background:#72796f; }
+.L .sw.on { background:#386a20; } .L .sw.on::after { background:#fff; }
+.L .btn { background:#386a20; color:#fff; }
+.L .tbtn { color:#386a20; }
+.L .tv { background:#ebefe7; } .L .tv.sel { background:#bcf0b4; }
+.L .chip { background:#386a20; color:#fff; } .L .chip.warn { background:#ffdcbe; color:#6a3c00; }
+.L .num { background:#386a20; color:#fff; }
+.L .stat span { color:#424940; }
+
+/* ============ DARK (dynamic colour from a violet wallpaper) ============ */
+.Dk { background:#141218; color:#e6e0e9; }
+.Dk .px { background:#141218; color:#e6e0e9; box-shadow:0 0 0 1px #2b2930, 0 0 0 8px #0c0b0e, 0 30px 60px -24px rgba(0,0,0,.8); margin:10px; }
+.Dk .nav i { background:#e6e0e9; opacity:.8; }
+.Dk .sup, .Dk .li small, .Dk .tv small, .Dk .wait { color:#cac4d0; }
+.Dk .lbl { color:#d0bcff; }
+.Dk .li, .Dk .step, .Dk .stat { background:#211f26; }
+.Dk .lead { background:#4f378b; color:#eaddff; }
+.Dk .sw.off { border:2px solid #938f99; background:#36343b; } .Dk .sw.off::after { background:#938f99; }
+.Dk .sw.on { background:#d0bcff; } .Dk .sw.on::after { background:#381e72; }
+.Dk .btn { background:#d0bcff; color:#381e72; }
+.Dk .tbtn { color:#d0bcff; }
+.Dk .tv { background:#211f26; } .Dk .tv.sel { background:#4f378b; }
+.Dk .chip { background:#d0bcff; color:#381e72; } .Dk .chip.warn { background:#5c4300; color:#ffdf9e; }
+.Dk .num { background:#d0bcff; color:#381e72; }
+.Dk .stat span { color:#cac4d0; }
+</style>
+
+<div class="m3">
+<h2>Native Android · Material 3 Expressive</h2>
+<p class="subtitle">The four main screens. Colours come from the phone's wallpaper (dynamic colour), so the app matches each person's phone. Below: the same app on a light green phone and a dark violet one. Click whichever you like, then tell me in the terminal what to change.</p>
+
+<!-- =================== LIGHT =================== -->
+<div class="theme L" data-choice="m3-light" onclick="toggleSelect(this)">
+<h3>Light · from a green wallpaper</h3>
+<p class="why">Big rounded headline, list groups that round off at the ends, real Android switches, full-width pill buttons. Find TV → Turn on debugging → Keep what you use → Done.</p>
+<div class="row4">
+
+  <!-- 1 FIND -->
+  <div class="px"><div class="cam"></div>
+    <div class="sb"><span>9:41</span><span class="ic"><svg width="14" height="12" viewBox="0 0 24 20"><path d="M12 20L0 6a17 17 0 0124 0z" fill="currentColor"/></svg><svg width="9" height="14" viewBox="0 0 12 20"><rect x="1" y="2" width="10" height="17" rx="2" fill="currentColor"/><rect x="4" y="0" width="4" height="2" fill="currentColor"/></svg></span></div>
+    <div class="bd">
+      <div class="ttl">Find your TV</div>
+      <p class="sup">Keep your phone on the same Wi-Fi as the TV.</p>
+      <div class="scan" data-cookie="L"></div>
+      <div class="tv sel"><div class="lead"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg></div><div><b>Mi Box 4</b><small>192.168.10.3</small></div><span class="chip">Ready</span></div>
+      <div class="tv"><div class="lead"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg></div><div><b>Bedroom TV</b><small>192.168.10.17</small></div><span class="chip warn">Setup</span></div>
+      <div class="grow"></div>
+      <div class="btn">Continue</div>
+      <div class="tbtn">Enter IP address</div>
+    </div>
+    <div class="nav"><i></i></div>
+  </div>
+
+  <!-- 2 DEBUG -->
+  <div class="px"><div class="cam"></div>
+    <div class="sb"><span>9:41</span><span class="ic">●●</span></div>
+    <div class="bd">
+      <div class="ttl">Turn on<br>debugging</div>
+      <p class="sup">Grab the TV remote. This is a one-time setup.</p>
+      <div class="lst">
+        <div class="step"><span class="num">1</span><span>Open <span class="kbd">Settings → Device Preferences → About</span></span></div>
+        <div class="step"><span class="num">2</span><span>Press OK on <span class="kbd">Build</span> 7 times</span></div>
+        <div class="step"><span class="num">3</span><span>Go back to <span class="kbd">Developer options</span> and turn on <span class="kbd">USB debugging</span></span></div>
+      </div>
+      <div class="wait"><svg width="22" height="22" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="#c4d6bd" stroke-width="3"/><path d="M12 3a9 9 0 019 9" fill="none" stroke="#386a20" stroke-width="3" stroke-linecap="round"/></svg>Waiting for your TV…</div>
+      <div class="grow"></div>
+      <div class="tbtn">Show me with pictures</div>
+    </div>
+    <div class="nav"><i></i></div>
+  </div>
+
+  <!-- 3 KEEP -->
+  <div class="px"><div class="cam"></div>
+    <div class="sb"><span>9:42</span><span class="ic">●●</span></div>
+    <div class="bd">
+      <div class="ttl">Keep what<br>you watch</div>
+      <p class="sup" style="margin-bottom:6px">The rest gets switched off. Undo any time.</p>
+      <div class="lbl">Apps</div>
+      <div class="lst">
+        <div class="li"><div class="app" style="background:#000;color:#e50914;font-family:Georgia,serif;font-size:22px">N</div>Netflix<div class="sw on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#386a20" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div></div>
+        <div class="li"><div class="app" style="background:#00a8e1;font-size:10px">prime</div>Prime Video<div class="sw on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#386a20" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div></div>
+        <div class="li"><div class="app" style="background:#fff;border:1px solid #e0e0e0"><svg width="22" height="16" viewBox="0 0 20 14"><rect width="20" height="14" rx="4" fill="#f00"/><path d="M8 4l5 3-5 3z" fill="#fff"/></svg></div>YouTube<div class="sw on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#386a20" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div></div>
+      </div>
+      <div class="lbl">Features</div>
+      <div class="lst">
+        <div class="li"><div class="lead"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></div><div>Voice search<small>Mic button</small></div><div class="sw off"></div></div>
+        <div class="li"><div class="lead"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 18a3 3 0 013 3M3 14a7 7 0 017 7M3 10a11 11 0 0111 11"/><path d="M6 5h13a2 2 0 012 2v10a2 2 0 01-2 2h-3"/></svg></div><div>Casting</div><div class="sw off"></div></div>
+      </div>
+      <div class="grow"></div>
+      <div class="btn">Clean up TV</div>
+    </div>
+    <div class="nav"><i></i></div>
+  </div>
+
+  <!-- 4 DONE -->
+  <div class="px"><div class="cam"></div>
+    <div class="sb"><span>9:44</span><span class="ic">●●</span></div>
+    <div class="bd">
+      <div class="hero" data-cookie-done="L"></div>
+      <div class="ttl" style="text-align:center;margin-top:8px">All clean</div>
+      <p class="sup" style="text-align:center">Your TV should feel noticeably faster.</p>
+      <div class="lst">
+        <div class="stat"><span>Memory freed</span><b>402 MB</b></div>
+        <div class="stat"><span>Storage freed</span><b>1.2 GB</b></div>
+        <div class="stat"><span>Switched off</span><b>29 apps</b></div>
+        <div class="stat"><span>Home screen</span><b>FLauncher</b></div>
+      </div>
+      <div class="grow"></div>
+      <div class="btn">Done</div>
+      <div class="tbtn">Undo everything</div>
+    </div>
+    <div class="nav"><i></i></div>
+  </div>
+
+</div>
+</div>
+
+<!-- =================== DARK =================== -->
+<div class="theme Dk" data-choice="m3-dark" onclick="toggleSelect(this)">
+<h3>Dark · from a violet wallpaper</h3>
+<p class="why">Same app on a phone in dark mode with a purple wallpaper. Middle screen: the clean-up running, with Android's new wavy progress bar and a live checklist.</p>
+<div class="row4">
+
+  <!-- KEEP dark -->
+  <div class="px"><div class="cam"></div>
+    <div class="sb"><span>21:41</span><span class="ic">●●</span></div>
+    <div class="bd">
+      <div class="ttl">Keep what<br>you watch</div>
+      <p class="sup" style="margin-bottom:6px">The rest gets switched off. Undo any time.</p>
+      <div class="lbl">Apps</div>
+      <div class="lst">
+        <div class="li"><div class="app" style="background:#000;color:#e50914;font-family:Georgia,serif;font-size:22px;outline:1px solid #333">N</div>Netflix<div class="sw on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d0bcff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div></div>
+        <div class="li"><div class="app" style="background:#00a8e1;font-size:10px">prime</div>Prime Video<div class="sw on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d0bcff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div></div>
+        <div class="li"><div class="app" style="background:#fff"><svg width="22" height="16" viewBox="0 0 20 14"><rect width="20" height="14" rx="4" fill="#f00"/><path d="M8 4l5 3-5 3z" fill="#fff"/></svg></div>YouTube<div class="sw on"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d0bcff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg></div></div>
+      </div>
+      <div class="lbl">Features</div>
+      <div class="lst">
+        <div class="li"><div class="lead"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></div><div>Voice search<small>Mic button</small></div><div class="sw off"></div></div>
+        <div class="li"><div class="lead"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 18a3 3 0 013 3M3 14a7 7 0 017 7M3 10a11 11 0 0111 11"/><path d="M6 5h13a2 2 0 012 2v10a2 2 0 01-2 2h-3"/></svg></div><div>Casting</div><div class="sw off"></div></div>
+      </div>
+      <div class="grow"></div>
+      <div class="btn">Clean up TV</div>
+    </div>
+    <div class="nav"><i></i></div>
+  </div>
+
+  <!-- RUNNING dark -->
+  <div class="px"><div class="cam"></div>
+    <div class="sb"><span>21:42</span><span class="ic">●●</span></div>
+    <div class="bd">
+      <div class="ttl">Cleaning up</div>
+      <p class="sup">Leave the remote alone for a minute.</p>
+      <svg width="240" height="16" viewBox="0 0 240 16" style="margin:4px 0 22px"><path id="wave" d="" fill="none" stroke="#d0bcff" stroke-width="5" stroke-linecap="round"/><path d="M160 8 H236" stroke="#4a4458" stroke-width="5" stroke-linecap="round"/></svg>
+      <div class="lst">
+        <div class="li"><div class="lead" style="background:#4f378b">✓</div><div>Ad trackers off<small>12 apps</small></div></div>
+        <div class="li"><div class="lead" style="background:#4f378b">✓</div><div>Unused apps off<small>17 apps</small></div></div>
+        <div class="li"><div class="lead" style="background:#4f378b">✓</div><div>Animations faster<small>0.5×</small></div></div>
+        <div class="li" style="opacity:.95"><div class="lead" style="background:#36343b"><svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="#4a4458" stroke-width="3"/><path d="M12 4a8 8 0 018 8" fill="none" stroke="#d0bcff" stroke-width="3" stroke-linecap="round"/></svg></div><div>Installing FLauncher<small>New home screen</small></div></div>
+        <div class="li" style="opacity:.5"><div class="lead" style="background:#36343b">5</div><div>Restart &amp; check</div></div>
+      </div>
+      <div class="grow"></div>
+    </div>
+    <div class="nav"><i></i></div>
+  </div>
+
+  <!-- DONE dark -->
+  <div class="px"><div class="cam"></div>
+    <div class="sb"><span>21:44</span><span class="ic">●●</span></div>
+    <div class="bd">
+      <div class="hero" data-cookie-done="D"></div>
+      <div class="ttl" style="text-align:center;margin-top:8px">All clean</div>
+      <p class="sup" style="text-align:center">Your TV should feel noticeably faster.</p>
+      <div class="lst">
+        <div class="stat"><span>Memory freed</span><b>402 MB</b></div>
+        <div class="stat"><span>Storage freed</span><b>1.2 GB</b></div>
+        <div class="stat"><span>Switched off</span><b>29 apps</b></div>
+        <div class="stat"><span>Home screen</span><b>FLauncher</b></div>
+      </div>
+      <div class="grow"></div>
+      <div class="btn">Done</div>
+      <div class="tbtn">Undo everything</div>
+    </div>
+    <div class="nav"><i></i></div>
+  </div>
+
+</div>
+</div>
+</div>
+
+<script>
+// Material 3 Expressive "cookie" shape (scalloped circle) used as the hero icon
+function cookie(r, bumps, depth, cx, cy) {
+  let d = ''; const n = 240;
+  for (let i = 0; i <= n; i++) { const t = i / n * Math.PI * 2; const rr = r + depth * Math.cos(bumps * t);
+    d += (i ? 'L' : 'M') + (cx + rr * Math.cos(t)).toFixed(2) + ' ' + (cy + rr * Math.sin(t)).toFixed(2); }
+  return d + 'Z';
+}
+document.querySelectorAll('[data-cookie]').forEach(el => {
+  el.innerHTML = `<svg width="150" height="150" viewBox="0 0 150 150">
+    <path d="${cookie(66,12,4,75,75)}" fill="#dce7d5"/><path d="${cookie(46,9,4,75,75)}" fill="#bcf0b4"/>
+    <g transform="translate(57 57)" fill="none" stroke="#002204" stroke-width="2.4" stroke-linecap="round"><path d="M18 30 a2 2 0 1 0 .01 0"/><path d="M9 22a13 13 0 0118 0"/><path d="M3 15a21 21 0 0130 0"/></g></svg>`;
+});
+document.querySelectorAll('[data-cookie-done]').forEach(el => {
+  const dark = el.dataset.cookieDone === 'D';
+  el.innerHTML = `<svg width="132" height="132" viewBox="0 0 132 132"><path d="${cookie(56,9,5,66,66)}" fill="${dark ? '#d0bcff' : '#386a20'}"/>
+    <path d="M44 67l15 15 30-31" fill="none" stroke="${dark ? '#381e72' : '#fff'}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+});
+// M3 Expressive wavy progress indicator
+const w = document.getElementById('wave'); if (w) { let d = 'M4 8'; for (let x = 4; x <= 148; x += 1) d += ` L${x} ${(8 + 4 * Math.sin((x - 4) / 24 * Math.PI * 2)).toFixed(2)}`; w.setAttribute('d', d); }
+</script>

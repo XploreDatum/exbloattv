@@ -1,0 +1,17 @@
+# Preinstalled streaming apps. NOT applied by default — pass this file explicitly:
+#   ./scripts/debloat.sh data/streaming-optional.list
+#
+# Delete the lines for services you actually pay for BEFORE running this.
+
+com.apple.atve.androidtv.appletv
+com.dazn
+com.hulu.livingroomplus        # US only
+com.tubitv                     # US only
+tv.twitch.android.app
+com.nvidia.geforcenow
+tv.wuaki.apptv                 # Rakuten TV
+rtve.tablet.android            # Spain
+com.wbd.stream                 # HBO Max
+com.disney.disneyplus
+com.netflix.ninja
+com.amazon.amazonvideo.livingroom

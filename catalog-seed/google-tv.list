@@ -1,0 +1,25 @@
+# Google TV / Android TV extras. Aggressive but safe — none of these are required
+# for the system to boot or for the remote to work.
+#
+# Comment out anything you actually use.
+
+com.google.android.katniss                    # Google Assistant + voice search (~90 MB)
+com.google.android.katniss.tv
+com.google.android.apps.tv.dreamx             # "Ambient mode" screensaver (~40 MB)
+com.google.android.apps.mediashell            # built-in Chromecast — KEEP if you cast
+com.google.android.videos                     # Google TV movie store
+com.google.android.play.games
+com.google.android.youtube.tvmusic            # YouTube Music
+com.google.android.youtube.tvunplugged        # YouTube TV (US only)
+android.autoinstalls.config.google.gtvpai     # auto-installs promoted apps
+com.google.android.feedback
+com.google.android.partnersetup
+com.google.android.syncadapters.calendar
+com.google.android.onetimeinitializer
+com.google.android.tts                        # KEEP if you use TalkBack or Assistant
+com.google.android.marvin.talkback            # screen reader — KEEP if you need a11y
+
+# The launcher itself. Do NOT disable until a replacement is installed AND working.
+# See docs/launcher.md — there is a trap with the setup wizard.
+# com.google.android.apps.tv.launcherx
+# com.google.android.tungsten.setupwraith

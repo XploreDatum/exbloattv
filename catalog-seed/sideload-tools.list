@@ -1,0 +1,11 @@
+# Sideloading helpers. If you drive the TV over ADB these are redundant — you can
+# install any APK from your computer. They all start at boot.
+#
+# Not applied by default. Keep Downloader if you want a way to install things
+# without a computer.
+
+cm.aptoidetv.pt                # Aptoide TV — unverified APKs; also hijacks market:// intents
+com.apkmirror.helper.prod
+com.alphainventor.filemanager
+eu.chainfire.tv.sideloadlauncher
+# com.esaba.downloader

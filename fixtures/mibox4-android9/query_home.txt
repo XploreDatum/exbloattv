@@ -1,0 +1,57 @@
+2 activities found:
+  Activity #0:
+    priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true
+    ActivityInfo:
+      name=me.efesser.flauncher.MainActivity
+      packageName=me.efesser.flauncher
+      enabled=true exported=true directBootAware=false
+      taskAffinity=me.efesser.flauncher targetActivity=null persistableMode=PERSIST_ROOT_ONLY
+      launchMode=2 flags=0x200 theme=0x7f0c0000
+      screenOrientation=0 configChanges=0x40003fb7 softInputMode=0x10
+      lockTaskLaunchMode=LOCK_TASK_LAUNCH_MODE_DEFAULT
+      resizeMode=RESIZE_MODE_UNRESIZEABLE
+      ApplicationInfo:
+        packageName=me.efesser.flauncher
+        labelRes=0x0 nonLocalizedLabel=FLauncher icon=0x7f090000 banner=0x7f050000
+        processName=me.efesser.flauncher
+        taskAffinity=me.efesser.flauncher
+        uid=10091 flags=0x3088be44 privateFlags=0x1100 theme=0x0
+        requiresSmallestWidthDp=0 compatibleWidthLimitDp=0 largestWidthLimitDp=0
+        sourceDir=/data/app/me.efesser.flauncher-tblkRbh5KgNCj6fD9LrAxQ==/base.apk
+        seinfo=default:targetSdkVersion=33
+        seinfoUser=:complete
+        dataDir=/data/user/0/me.efesser.flauncher
+        deviceProtectedDataDir=/data/user_de/0/me.efesser.flauncher
+        credentialProtectedDataDir=/data/user/0/me.efesser.flauncher
+        enabled=true minSdkVersion=21 targetSdkVersion=33 versionCode=366 targetSandboxVersion=1
+        supportsRtl=false
+        fullBackupContent=true
+        HiddenApiEnforcementPolicy=2
+  Activity #1:
+    priority=-1000 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true
+    ActivityInfo:
+      name=com.android.tv.settings.system.FallbackHome
+      packageName=com.android.tv.settings
+      enabled=true exported=true directBootAware=true
+      taskAffinity=com.android.tv.settings targetActivity=null persistableMode=PERSIST_ROOT_ONLY
+      launchMode=0 flags=0x220 theme=0x7f1000b4
+      screenOrientation=-1 configChanges=0x40002ff7 softInputMode=0x0
+      lockTaskLaunchMode=LOCK_TASK_LAUNCH_MODE_DEFAULT
+      resizeMode=RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION
+      ApplicationInfo:
+        packageName=com.android.tv.settings
+        labelRes=0x7f0f0321 nonLocalizedLabel=null icon=0x7f080102 banner=0x7f080092
+        processName=com.android.tv.settings
+        taskAffinity=com.android.tv.settings
+        uid=1000 flags=0x38c8be45 privateFlags=0x101068 theme=0x7f1001a0
+        requiresSmallestWidthDp=0 compatibleWidthLimitDp=0 largestWidthLimitDp=0
+        sourceDir=/system/priv-app/TvSettings/TvSettings.apk
+        seinfo=platform:privapp:targetSdkVersion=26
+        seinfoUser=:complete
+        dataDir=/data/user_de/0/com.android.tv.settings
+        deviceProtectedDataDir=/data/user_de/0/com.android.tv.settings
+        credentialProtectedDataDir=/data/user/0/com.android.tv.settings
+        enabled=true minSdkVersion=23 targetSdkVersion=28 versionCode=1 targetSandboxVersion=1
+        supportsRtl=true
+        fullBackupContent=true
+        HiddenApiEnforcementPolicy=0
