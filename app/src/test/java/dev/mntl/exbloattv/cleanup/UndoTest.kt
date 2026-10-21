@@ -47,6 +47,8 @@ class UndoTest {
     private val appops = mutableMapOf<String, String>()
     /** Commands that run the given hook after the TV has applied them. */
     private val after = mutableMapOf<String, () -> Unit>()
+    /** Runs after every command. */
+    private var afterAny: (String) -> Unit = {}
 
     init {
         tv.installed += listOf(ADS, NEWS, SPORTS, BLOAT, GAME)
@@ -55,6 +57,7 @@ class UndoTest {
             val code = extra(cmd)
             if (code == null) base(cmd) else tv.adb.exitCodes[cmd] = code
             after[cmd]?.invoke()
+            afterAny(cmd)
         }
     }
 
@@ -276,7 +279,7 @@ class UndoTest {
         val report = undo().undoAll(tv.adb, serial)
 
         assertThat(mutations()).containsExactly("pm enable $NEWS", "pm enable $ADS").inOrder()
-        assertThat(report).isEqualTo(UndoReport(1, listOf("Ads"), emptyList()))
+        assertThat(report).isEqualTo(UndoReport(1, listOf(UndoFailure(ADS, ChangeKind.DISABLE)), emptyList()))
         assertThat(state().changes.map { it.pkg }).containsExactly(ADS)
         assertThat(state().lock).isNull()
     }
@@ -285,7 +288,7 @@ class UndoTest {
         disable(pixel, ADS)
         tv.failingReads += "pm list packages -e $ADS"
         val report = undo().undoAll(tv.adb, serial)
-        assertThat(report.failed).containsExactly("Ads")
+        assertThat(report.failed).containsExactly(UndoFailure(ADS, ChangeKind.DISABLE))
         assertThat(state().changes).hasSize(1)
     }
 
@@ -299,7 +302,11 @@ class UndoTest {
 
         // Undoing the older "switch off" now would leave a log that no longer matches the TV.
         assertThat(mutations()).containsExactly("pm disable-user --user 0 $SPORTS")
-        assertThat(report).isEqualTo(UndoReport(0, listOf("Sports"), emptyList()))
+        assertThat(report.restored).isEqualTo(0)
+        assertThat(report.failed).containsExactly(
+            UndoFailure(SPORTS, ChangeKind.ENABLE),
+            UndoFailure(SPORTS, ChangeKind.DISABLE),
+        ).inOrder()
         assertThat(state().changes.map { it.kind }).containsExactly(ChangeKind.DISABLE, ChangeKind.ENABLE).inOrder()
     }
 
@@ -324,7 +331,7 @@ class UndoTest {
         val report = undo().undoAll(tv.adb, serial)
 
         assertThat(mutations()).isEmpty()
-        assertThat(report.failed).containsExactly("Vending")
+        assertThat(report.failed).containsExactly(UndoFailure("com.android.vending", ChangeKind.ENABLE))
         assertThat(state().changes).hasSize(1)
     }
 
@@ -337,7 +344,7 @@ class UndoTest {
         val report = undo().undoAll(tv.adb, serial)
 
         assertThat(mutations()).isEmpty()
-        assertThat(report.failed).containsExactly("Tvlauncher")
+        assertThat(report.failed).containsExactly(UndoFailure(STOCK, ChangeKind.INSTALL_EXISTING))
         assertThat(tv.installed).contains(STOCK)
     }
 
@@ -352,7 +359,11 @@ class UndoTest {
         assertThat(mutations()).isEmpty()
         assertThat(tv.adb.log.none { "reboot" in it }).isTrue()
         assertThat(report.restored).isEqualTo(0)
-        assertThat(report.failed).hasSize(3)
+        assertThat(report.failed).containsExactly(
+            UndoFailure(NETFLIX, ChangeKind.APPOPS),
+            UndoFailure(null, ChangeKind.ANIMATIONS),
+            UndoFailure(null, ChangeKind.DISABLE),
+        ).inOrder()
         assertThat(state().changes).hasSize(3)
     }
 
@@ -364,7 +375,7 @@ class UndoTest {
         val report = undo().undoAll(tv.adb, serial)
 
         // The stock launcher is back on but HOME lands on the fallback screen: the person is told.
-        assertThat(report.failed).containsExactly("Home screen")
+        assertThat(report.failed).containsExactly(UndoFailure(null, ChangeKind.LAUNCHER_SWAP)) // once, not twice
         assertThat(tv.disabled).isEmpty()
     }
 
@@ -453,7 +464,7 @@ class UndoTest {
 
         val report = undo().undoAll(tv.adb, serial)
 
-        assertThat(report).isEqualTo(UndoReport(0, listOf("Ninja (running in the background)"), emptyList()))
+        assertThat(report).isEqualTo(UndoReport(0, listOf(UndoFailure(NETFLIX, ChangeKind.APPOPS)), emptyList()))
         assertThat(state().changes).hasSize(1)
     }
 
@@ -496,8 +507,10 @@ class UndoTest {
         }
         tv.adb.log.clear()
 
-        thrown<TvLockedException> { undo(pixel).undoAll(tv.adb, serial) }
+        val e = thrown<UndoInterruptedException> { undo(pixel).undoAll(tv.adb, serial) }
 
+        assertThat(e.cause).isInstanceOf(TvLockedException::class.java)
+        assertThat(e.partial).isEqualTo(UndoReport(1, emptyList(), emptyList()))
         assertThat(mutations()).containsExactly("pm enable $NEWS")
         assertThat(state().lock?.byPhone).isEqualTo(galaxy)
         assertThat(state().changes.map { it.pkg }).containsExactly(ADS)
@@ -529,8 +542,10 @@ class UndoTest {
         tv.adb.log.clear()
         tv.adb.failNext("pm enable $ADS", AdbError.Disconnected())
 
-        thrown<AdbError.Disconnected> { undo().undoAll(tv.adb, serial) }
+        val e = thrown<UndoInterruptedException> { undo().undoAll(tv.adb, serial) }
 
+        assertThat(e.cause).isInstanceOf(AdbError.Disconnected::class.java)
+        assertThat(e.partial).isEqualTo(UndoReport(1, emptyList(), emptyList())) // what was put back before it stopped
         assertThat(state().changes.map { it.pkg }).containsExactly(ADS)
         assertThat(state().lock).isNull()
 
@@ -540,6 +555,121 @@ class UndoTest {
         assertThat(mutations()).containsExactly("pm enable $ADS")
         assertThat(report.restored).isEqualTo(1)
         assertThat(state().changes).isEmpty()
+    }
+
+    @Test fun connectionLostRightAfterTheSwapIsMarkedUnfinishedIsCompletedByTheNextUndo() = runTest {
+        swap(pixel)
+        tv.adb.log.clear()
+        val file = TvStateStore.FILE
+        var cut = false
+        afterAny = { cmd ->
+            // The write that drops ":home" just landed: the next read (recover() loading the log) loses the TV.
+            if (!cut && cmd.startsWith("mv ") && tv.fs[file]?.contains(":home") == false) {
+                cut = true
+                tv.adb.failNext("cat $file", AdbError.Disconnected())
+            }
+        }
+
+        val e = thrown<UndoInterruptedException> { undo().undoAll(tv.adb, serial) }
+
+        assertThat(e.cause).isInstanceOf(AdbError.Disconnected::class.java)
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH) // nothing on the TV changed yet
+        assertThat(state().changes.map { it.id.substringAfter(':') })
+            .containsExactly("install", "disable:$STOCK", "disable:$SETUPWRAITH")
+
+        tv.adb.log.clear()
+        val report = undo().undoAll(tv.adb, serial)
+
+        assertThat(mutations()).containsExactly(
+            "pm enable $SETUPWRAITH", "pm enable $STOCK", "pm uninstall $FLAUNCHER_PKG", home, home,
+        ).inOrder()
+        assertThat(report).isEqualTo(UndoReport(3, emptyList(), emptyList()))
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
+        assertThat(tv.foreground).isEqualTo(STOCK)
+        assertThat(state().changes).isEmpty()
+    }
+
+    @Test fun aSwapRecordWithNothingToPutBackIsDroppedWithoutPressingHome() = runTest {
+        store().appendChange(
+            serial,
+            Change("swap-7-abcd1234:home", ChangeKind.LAUNCHER_SWAP, FLAUNCHER_PKG, "", FLAUNCHER_PKG, pixel, 7, true),
+        )
+        tv.adb.log.clear()
+
+        val report = undo().undoAll(tv.adb, serial)
+
+        assertThat(mutations()).isEmpty()
+        assertThat(report).isEqualTo(UndoReport(0, emptyList(), emptyList()))
+        assertThat(state().changes).isEmpty()
+    }
+
+    // --- another phone changing the log --------------------------------------------------------------------
+
+    @Test fun aLogChangedByAnotherPhoneMidwayIsPlannedAgain() = runTest {
+        disable(pixel, SPORTS)
+        disable(pixel, ADS)
+        disable(pixel, NEWS)
+        // While this phone was away (its lock lapsed), another phone switched Sports back on, logged it and left.
+        after["pm enable $NEWS"] = {
+            runBlocking {
+                val other = TvStateStore(tv.adb) { testScheduler.currentTime }
+                val s = other.load(serial)
+                val foreign = Change("run-9-abcd1234:0:ef567890", ChangeKind.ENABLE, SPORTS, "disabled", "enabled", galaxy, 9, true)
+                other.save(s.copy(changes = s.changes + foreign, lock = null))
+            }
+            tv.disabled -= SPORTS
+        }
+        tv.adb.log.clear()
+
+        val report = undo(pixel).undoAll(tv.adb, serial)
+
+        // The newer change is undone first, then the older ones, so Sports ends as it started: on.
+        assertThat(mutations()).containsExactly(
+            "pm enable $NEWS",
+            "pm disable-user --user 0 $SPORTS",
+            "pm enable $ADS",
+            "pm enable $SPORTS",
+        ).inOrder()
+        assertThat(report).isEqualTo(UndoReport(4, emptyList(), emptyList()))
+        assertThat(tv.disabled).isEmpty()
+        assertThat(state().changes).isEmpty()
+    }
+
+    // --- deleted apps ---------------------------------------------------------------------------------------
+
+    @Test fun aDeletedAppThatWasReinstalledIsDroppedAndItsOlderChangesUndone() = runTest {
+        disable(pixel, GAME)
+        record(galaxy, ChangeKind.UNINSTALL, GAME, "installed", "deleted") { tv.installed -= GAME; tv.disabled -= GAME }
+        tv.installed += GAME // the person got it back from the Play Store
+        tv.adb.log.clear()
+
+        val report = undo().undoAll(tv.adb, serial)
+
+        assertThat(mutations()).containsExactly("pm enable $GAME")
+        assertThat(report).isEqualTo(UndoReport(2, emptyList(), emptyList()))
+        assertThat(state().changes).isEmpty()
+    }
+
+    @Test fun anUnconfirmedDeleteOfAMissingAppIsListedToo() = runTest {
+        record(galaxy, ChangeKind.UNINSTALL, GAME, "installed", "deleted", verified = false) { tv.installed -= GAME }
+        val report = undo().undoAll(tv.adb, serial)
+        assertThat(report).isEqualTo(UndoReport(0, emptyList(), listOf(GAME)))
+        assertThat(state().changes).hasSize(1)
+    }
+
+    @Test fun aReinstalledAppThatIsSwitchedOffIsReportedNotListed() = runTest {
+        record(galaxy, ChangeKind.UNINSTALL, GAME, "installed", "deleted") { tv.disabled += GAME }
+        val report = undo().undoAll(tv.adb, serial)
+        assertThat(report).isEqualTo(UndoReport(0, listOf(UndoFailure(GAME, ChangeKind.UNINSTALL)), emptyList()))
+        assertThat(state().changes).hasSize(1)
+    }
+
+    @Test fun anUnreadableAppListNeverListsOrDropsADeletedApp() = runTest {
+        record(galaxy, ChangeKind.UNINSTALL, GAME, "installed", "deleted") { tv.installed -= GAME }
+        tv.failingReads += "pm list packages $GAME"
+        val report = undo().undoAll(tv.adb, serial)
+        assertThat(report).isEqualTo(UndoReport(0, listOf(UndoFailure(GAME, ChangeKind.UNINSTALL)), emptyList()))
+        assertThat(state().changes).hasSize(1)
     }
 
     // --- Play Store -----------------------------------------------------------------------------------------

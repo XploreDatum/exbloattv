@@ -9,11 +9,13 @@ import dev.mntl.exbloattv.state.ChangeKind
 import dev.mntl.exbloattv.state.RestorePoint
 import dev.mntl.exbloattv.state.TvLockedException
 import dev.mntl.exbloattv.state.TvStateReadException
+import dev.mntl.exbloattv.state.TvState
 import dev.mntl.exbloattv.state.TvStateStore
 import dev.mntl.exbloattv.state.TvStateWriteException
 import dev.mntl.exbloattv.tv.Inventory
 import dev.mntl.exbloattv.tv.Parsers
 import dev.mntl.exbloattv.tv.TvReadException
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.cancellation.CancellationException
@@ -21,6 +23,7 @@ import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -132,13 +135,31 @@ class CleanupRunner(
         private var reconnects = 0
         private var pauseMessage = LOST
         private var needsRecover = false
-        /** Write-ahead entries of steps whose outcome on the TV is not known yet, by step index. */
-        private val inflight = mutableMapOf<Int, Change>()
+        /** Write-ahead entries whose outcome on the TV is not known yet, by step index ("3", or "3:<op>" for app-ops). */
+        private val inflight = mutableMapOf<String, Change>()
+        /**
+         * Other phones' change ids as of our last write that could touch them; any difference later means the TV
+         * changed under us. Only LauncherSwap's recover/rollback ever removes another phone's entries (the runner's
+         * own writes touch only its own ids), so it is re-taken after each LauncherSwap call. Not re-taken at the end
+         * of every step, which would silently absorb another phone writing during that step.
+         */
+        private var foreignAtStart: Set<String>? = null
+        /** A LauncherSwap call was cut off, so what it removed is unknown: take a new snapshot at the next check. */
+        private var foreignDirty = false
+        /** Ids of changes this run verified; another phone's Undo removes them. */
+        private val confirmedIds = mutableSetOf<String>()
+        /** Set once another phone changed the TV mid-run: the plan is stale, nothing more may run. */
+        private var stale = false
         private val verifiedDisabled = linkedSetOf<String>()
         private val verifiedRemoved = linkedSetOf<String>()
         private var swapDone = false
-        /** RebootAndVerify steps whose restart already happened (a retry then only checks). */
+        /** RebootAndVerify steps whose restart is confirmed (a retry then only checks). */
         private val rebooted = mutableSetOf<Int>()
+        /**
+         * boot_id read before a restart was requested, kept until the restart is confirmed or ruled out: after a lost
+         * connection or a TV that came back late, the retry compares instead of restarting again.
+         */
+        private val bootBefore = mutableMapOf<Int, String>()
 
         suspend fun execute() {
             try {
@@ -230,6 +251,18 @@ class CleanupRunner(
                 it.status == StepStatus.DONE || it.status == StepStatus.FAILED || it.status == StepStatus.SKIPPED
             }
             out.send(RunProgress(states.toList(), finished.toFloat() / states.size, waitingForTv))
+        }
+
+        /** For updates made inside a step (NonCancellable): a collector that went away must not abort the step. */
+        @OptIn(DelicateCoroutinesApi::class)
+        private suspend fun emitIfOpen() {
+            if (out.isClosedForSend) return
+            try {
+                emit()
+            } catch (_: ClosedSendChannelException) {
+            } catch (_: CancellationException) {
+                // The collector was cancelled; the step goes on and the run stops after it.
+            }
         }
 
         private suspend fun runStep(i: Int) {
@@ -337,18 +370,27 @@ class CleanupRunner(
          * LauncherSwap reads the TV (packages, HOME) as it goes; when one of those reads fails, what the swap did is
          * unknown. That is retried like a lost connection (reconnect, [LauncherSwap.recover], same step), never DONE.
          */
-        private suspend fun <T> swapCall(block: suspend () -> T): T =
+        private suspend fun <T> swapCall(block: suspend () -> T): T {
+            var settled = false
             try {
-                block()
+                val r = block()
+                foreignAtStart = foreignIds(store.load(serial))
+                settled = true
+                return r
             } catch (e: TvReadException) {
                 throw SwapStateUnknown(e)
+            } finally {
+                if (!settled) foreignDirty = true
             }
+        }
 
         // --- steps --------------------------------------------------------------------------------------------
 
         private suspend fun executeStep(i: Int): Outcome {
             val adb = checkNotNull(adb)
-            store.acquireLock(serial, phone).getOrThrow()
+            if (i != 0) changedElsewhere()?.let { return it }
+            val locked = store.acquireLock(serial, phone).getOrThrow()
+            if (foreignAtStart == null) foreignAtStart = foreignIds(locked)
             val step = steps[i]
             var note: String? = null
             if (step == Step.SaveRestorePoint) saveRestorePoint()
@@ -377,6 +419,34 @@ class CleanupRunner(
             }
         }
 
+        /**
+         * Before re-taking the lock for a step: a fresh lock held by another phone fails the step (it is cleaning
+         * now). A lock that isn't ours any more (released or taken over while this run waited), or a change log that
+         * gained or lost another phone's entries, or lost ours (e.g. another phone's Undo), means the plan no longer
+         * matches the TV: the run stops for good and the person must read the TV again.
+         */
+        private suspend fun changedElsewhere(): Outcome? {
+            val s = store.load(serial)
+            val lock = s.lock
+            if (lock != null && lock.byPhone != phone && now() - lock.at < TvStateStore.LOCK_EXPIRY_MS) {
+                throw TvLockedException(lock.byPhone, lock.at)
+            }
+            if (foreignDirty) {
+                // Our interrupted recovery may have removed another phone's swap entries. The lock check below still
+                // catches any other phone that worked on the TV meanwhile (it must have taken and released our lock).
+                foreignAtStart = foreignIds(s)
+                foreignDirty = false
+            }
+            if (!stale) {
+                stale = lock?.byPhone != phone ||
+                    foreignIds(s) != foreignAtStart ||
+                    !s.changes.map { it.id }.containsAll(confirmedIds)
+            }
+            return if (stale) Outcome.Failed(CHANGED_ELSEWHERE, block = true) else null
+        }
+
+        private fun foreignIds(s: TvState) = s.changes.filter { it.byPhone != phone }.map { it.id }.toSet()
+
         private suspend fun saveRestorePoint() {
             val rp = RestorePoint(
                 takenAt = now(),
@@ -401,7 +471,10 @@ class CleanupRunner(
                 swapDone = false
                 mutex.withLock {
                     val s = states.indexOfFirst { it.step == Step.SwapLauncher && it.status == StepStatus.DONE }
-                    if (s >= 0) states[s] = StepState(Step.SwapLauncher, StepStatus.FAILED, r.reason)
+                    if (s >= 0) {
+                        states[s] = StepState(Step.SwapLauncher, StepStatus.FAILED, r.reason)
+                        emitIfOpen()
+                    }
                 }
                 return null
             }
@@ -409,11 +482,11 @@ class CleanupRunner(
         }
 
         private suspend fun disable(adb: AdbClient, i: Int, pkg: String): Outcome {
-            if (SafetyGuard.isProtected(pkg, activeHome(adb))) return Outcome.Failed(PROTECTED)
-            var entry = inflight[i]
+            if (isProtected(adb, pkg)) return Outcome.Failed(PROTECTED)
+            var entry = inflight["$i"]
             if (entry == null) {
                 if (presence(adb, pkg) != Presence.ENABLED) return Outcome.Done() // already off
-                entry = begin(i, ChangeKind.DISABLE, pkg, "enabled", "disabled")
+                entry = begin("$i", ChangeKind.DISABLE, pkg, "enabled", "disabled")
             } else {
                 settleDisable(i, entry, pkg, presence(adb, pkg))?.let { return it }
             }
@@ -422,28 +495,28 @@ class CleanupRunner(
                 settleDisable(i, entry, pkg, presence(adb, pkg))?.let { return it }
                 // Printed success but still on: remove it for this user instead (Undo: install-existing).
                 entry = entry.copy(kind = ChangeKind.REMOVE_FOR_USER, to = REMOVED)
+                inflight["$i"] = entry
                 store.upsertChange(serial, entry)
-                inflight[i] = entry
             }
             adb.shell("pm uninstall -k --user 0 $pkg")
             settleDisable(i, entry, pkg, presence(adb, pkg))?.let { return it }
-            discard(i, entry)
+            discard("$i", entry)
             return Outcome.Failed("Couldn't switch this app off")
         }
 
         /** Decides a disable from what the TV shows; null while the app is still on. */
         private suspend fun settleDisable(i: Int, entry: Change, pkg: String, seen: Presence): Outcome? = when (seen) {
             Presence.DISABLED -> {
-                confirm(i, entry.copy(kind = ChangeKind.DISABLE, to = "disabled"))
+                confirm("$i", entry.copy(kind = ChangeKind.DISABLE, to = "disabled"))
                 verifiedDisabled += pkg
                 Outcome.Done()
             }
             Presence.ABSENT -> {
                 if (entry.kind == ChangeKind.REMOVE_FOR_USER) {
-                    confirm(i, entry)
+                    confirm("$i", entry)
                     verifiedRemoved += pkg
                 } else {
-                    discard(i, entry) // switching off never removes an app: something else did
+                    discard("$i", entry) // switching off never removes an app: something else did
                 }
                 Outcome.Done()
             }
@@ -451,97 +524,110 @@ class CleanupRunner(
         }
 
         private suspend fun enable(adb: AdbClient, i: Int, pkg: String): Outcome {
-            var entry = inflight[i]
+            var entry = inflight["$i"]
             if (listed(adb, "-e", pkg)) {
-                entry?.let { confirm(i, it) }
+                entry?.let { confirm("$i", it) }
                 return Outcome.Done()
             }
             if (!listed(adb, "-d", pkg)) {
-                entry?.let { discard(i, it) }
+                entry?.let { discard("$i", it) }
                 return Outcome.Failed("This app isn't on the TV any more")
             }
-            if (entry == null) entry = begin(i, ChangeKind.ENABLE, pkg, "disabled", "enabled")
+            if (entry == null) entry = begin("$i", ChangeKind.ENABLE, pkg, "disabled", "enabled")
             adb.shell("pm enable $pkg")
             if (listed(adb, "-e", pkg)) {
-                confirm(i, entry)
+                confirm("$i", entry)
                 return Outcome.Done()
             }
-            discard(i, entry)
+            discard("$i", entry)
             return Outcome.Failed("Couldn't switch this app on")
         }
 
         private suspend fun installExisting(adb: AdbClient, i: Int, pkg: String): Outcome {
-            var entry = inflight[i]
+            var entry = inflight["$i"]
             if (listed(adb, "", pkg)) {
-                entry?.let { confirm(i, it) }
+                entry?.let { confirm("$i", it) }
                 return Outcome.Done()
             }
-            if (entry == null) entry = begin(i, ChangeKind.INSTALL_EXISTING, pkg, REMOVED, "installed")
+            if (entry == null) entry = begin("$i", ChangeKind.INSTALL_EXISTING, pkg, REMOVED, "installed")
             adb.shell("cmd package install-existing $pkg")
             if (listed(adb, "", pkg)) {
-                confirm(i, entry)
+                confirm("$i", entry)
                 return Outcome.Done()
             }
-            discard(i, entry)
+            discard("$i", entry)
             return Outcome.Failed("Couldn't bring this app back")
         }
 
         private suspend fun uninstall(adb: AdbClient, i: Int, pkg: String): Outcome {
-            if (SafetyGuard.isProtected(pkg, activeHome(adb))) return Outcome.Failed(PROTECTED)
-            var entry = inflight[i]
+            if (isProtected(adb, pkg)) return Outcome.Failed(PROTECTED)
+            var entry = inflight["$i"]
             if (!listed(adb, "", pkg)) {
-                entry?.let { confirm(i, it) }
+                entry?.let { confirm("$i", it) }
                 return Outcome.Done()
             }
             if (entry == null) {
                 if (!listed(adb, "-3", pkg)) return Outcome.Failed("This app came with the TV, so it can't be deleted")
-                entry = begin(i, ChangeKind.UNINSTALL, pkg, "installed", "deleted")
+                entry = begin("$i", ChangeKind.UNINSTALL, pkg, "installed", "deleted")
             }
             adb.shell("pm uninstall $pkg")
             if (!listed(adb, "", pkg)) {
-                confirm(i, entry)
+                confirm("$i", entry)
                 return Outcome.Done()
             }
-            discard(i, entry)
+            discard("$i", entry)
             return Outcome.Failed("Couldn't delete this app")
         }
 
+        /**
+         * Logged for Undo as the raw `settings get global` answers joined "window,transition,animator", with
+         * "null" kept for a scale that was never set (e.g. from "1.0,null,1.0", to "0.5,0.5,0.5"). Verified by value.
+         */
         private suspend fun setAnimations(adb: AdbClient, i: Int, scale: Float): Outcome {
-            val target = List(ANIMATION_KEYS.size) { scale }
-            val entry = inflight[i]
-            val current = ANIMATION_KEYS.map { scale(adb, it) }
-            if (current == target) {
-                entry?.let { confirm(i, it) }
+            val entry = inflight["$i"]
+            val current = ANIMATION_KEYS.map { rawScale(adb, it) }
+            if (current.all { valueOf(it) == scale }) {
+                entry?.let { confirm("$i", it) }
                 return Outcome.Done()
             }
-            val e = entry ?: begin(i, ChangeKind.ANIMATIONS, null, scales(current), scales(target))
+            val e = entry ?: begin("$i", ChangeKind.ANIMATIONS, null, joined(current), joined(ANIMATION_KEYS.map { "$scale" }))
             ANIMATION_KEYS.forEach { adb.shell("settings put global $it $scale") }
-            val after = ANIMATION_KEYS.map { scale(adb, it) }
-            if (after == target) {
-                confirm(i, e)
+            val after = ANIMATION_KEYS.map { rawScale(adb, it) }
+            if (after.all { valueOf(it) == scale }) {
+                confirm("$i", e)
                 return Outcome.Done()
             }
             // Drop the entry only if nothing changed; a partial change stays logged so Undo puts it back.
-            if (scales(after) == e.from) discard(i, e)
+            if (joined(after) == e.from) discard("$i", e)
             return Outcome.Failed("Couldn't change the animation speed")
         }
 
+        /**
+         * Spec §6.7 + controller ruling: `RUN_IN_BACKGROUND`, and on Android 9+ (API 28, where it exists) also
+         * `RUN_ANY_IN_BACKGROUND`, set to ignore. One APPOPS change per op, encoded `from = "<OP>=<mode>"`,
+         * `to = "<OP>=ignore"`, each read back. Stops at the first op that doesn't take.
+         */
         private suspend fun restrictBackground(adb: AdbClient, i: Int, pkg: String): Outcome {
-            val entry = inflight[i]
-            val from = appop(adb, pkg)
-            if (from == IGNORE) {
-                entry?.let { confirm(i, it) }
-                return Outcome.Done()
+            val ops = if (before.info.sdkInt >= 28) listOf(RUN_IN_BACKGROUND, RUN_ANY_IN_BACKGROUND) else listOf(RUN_IN_BACKGROUND)
+            for (op in ops) {
+                val key = "$i:$op"
+                val entry = inflight[key]
+                val from = appop(adb, pkg, op)
+                if (from == IGNORE) {
+                    entry?.let { confirm(key, it) }
+                    continue
+                }
+                val e = entry ?: begin(key, ChangeKind.APPOPS, pkg, "$op=$from", "$op=$IGNORE")
+                adb.shell("cmd appops set $pkg $op $IGNORE")
+                val after = appop(adb, pkg, op)
+                if (after == IGNORE) {
+                    confirm(key, e)
+                    continue
+                }
+                if ("$op=$after" == e.from) discard(key, e)
+                return Outcome.Failed("Couldn't stop this app running in the background")
             }
-            val e = entry ?: begin(i, ChangeKind.APPOPS, pkg, from, IGNORE)
-            adb.shell("cmd appops set $pkg $RUN_ANY_IN_BACKGROUND $IGNORE")
-            val after = appop(adb, pkg)
-            if (after == IGNORE) {
-                confirm(i, e)
-                return Outcome.Done()
-            }
-            if (after == e.from) discard(i, e)
-            return Outcome.Failed("Couldn't stop this app running in the background")
+            return Outcome.Done()
         }
 
         private suspend fun trimCaches(adb: AdbClient): Outcome {
@@ -553,7 +639,15 @@ class CleanupRunner(
         /** Spec §6.11: restart, reconnect, check the home screen, and that everything this run switched off stayed off. */
         private suspend fun rebootAndVerify(i: Int): Outcome {
             if (i !in rebooted) {
-                adopt(swap.rebootAndReconnect(checkNotNull(adb), reconnect = { open() }))
+                // boot_id changes on every boot: the only proof the restart really happened. A reboot command that
+                // never reached the TV would otherwise "reconnect" to the same running TV and pass every check.
+                val before = bootBefore[i] ?: bootId(checkNotNull(adb)).also {
+                    bootBefore[i] = it
+                    adopt(swap.rebootAndReconnect(checkNotNull(adb), reconnect = { open() }))
+                }
+                val after = bootId(checkNotNull(adb))
+                bootBefore.remove(i) // either way, a retry starts with a fresh restart
+                if (after == before) return Outcome.Failed(NO_RESTART)
                 rebooted += i
             }
             val adb = checkNotNull(adb)
@@ -578,23 +672,27 @@ class CleanupRunner(
 
         // --- change log ---------------------------------------------------------------------------------------
 
-        /** Appends the unverified entry before the command, so a lost reply still leaves a record. */
-        private suspend fun begin(i: Int, kind: ChangeKind, pkg: String?, from: String, to: String): Change {
-            val c = Change("$runId:$i:${UUID.randomUUID().toString().take(8)}", kind, pkg, from, to, phone, now(), false)
-            store.appendChange(serial, c)
-            inflight[i] = c
+        /**
+         * Writes the unverified entry before the command, so a lost reply still leaves a record. It is remembered
+         * first and written with upsert, so a write whose reply was lost is never duplicated by the retry.
+         */
+        private suspend fun begin(key: String, kind: ChangeKind, pkg: String?, from: String, to: String): Change {
+            val c = Change("$runId:$key:${UUID.randomUUID().toString().take(8)}", kind, pkg, from, to, phone, now(), false)
+            inflight[key] = c
+            store.upsertChange(serial, c)
             return c
         }
 
-        private suspend fun confirm(i: Int, c: Change) {
+        private suspend fun confirm(key: String, c: Change) {
             store.upsertChange(serial, c.copy(verified = true))
-            inflight.remove(i)
+            confirmedIds += c.id
+            inflight.remove(key)
         }
 
         /** The TV was read back and shows the change didn't happen. */
-        private suspend fun discard(i: Int, c: Change) {
+        private suspend fun discard(key: String, c: Change) {
             store.removeChanges(serial, setOf(c.id))
-            inflight.remove(i)
+            inflight.remove(key)
         }
 
         // --- reads --------------------------------------------------------------------------------------------
@@ -618,32 +716,64 @@ class CleanupRunner(
             else -> Presence.ABSENT
         }
 
-        /** The package HOME resolves to right now (protected until a replacement is verified). */
-        private suspend fun activeHome(adb: AdbClient): String? =
-            Parsers.resolveActivityBrief(read(adb, "current home screen", RESOLVE_HOME))?.substringBefore('/')
-
-        /** Same rule as the inventory: only the literal "null" (never set) means the default 1.0. */
-        private suspend fun scale(adb: AdbClient, key: String): Float {
-            val text = read(adb, "animation settings", "settings get global $key").trim()
-            if (text == "null") return 1.0f
-            return text.toFloatOrNull() ?: throw TvReadException("animation settings", "unexpected value '$text' for $key")
+        /**
+         * SafetyGuard plus the home screen, read right now. Fails closed: if HOME doesn't resolve to one real package
+         * (nothing, the chooser, the black-screen fallback home or the setup wizard), every HOME-capable package is
+         * protected; an empty list of them is a failed read, never "nothing to protect".
+         */
+        private suspend fun isProtected(adb: AdbClient, pkg: String): Boolean {
+            if (SafetyGuard.isProtected(pkg)) return true
+            val home = Parsers.resolveActivityBrief(read(adb, "current home screen", RESOLVE_HOME))?.substringBefore('/')
+            if (home != null && home !in NOT_A_REAL_HOME) return pkg == home
+            val candidates = Parsers.queryActivitiesPackages(read(adb, "home screen apps", QUERY_HOME))
+            if (candidates.isEmpty()) throw TvReadException("home screen apps", "none found")
+            return pkg in candidates
         }
 
-        private suspend fun appop(adb: AdbClient, pkg: String): String =
-            Parsers.appop(read(adb, "background setting", "cmd appops get $pkg $RUN_ANY_IN_BACKGROUND"), RUN_ANY_IN_BACKGROUND)
-                ?: "default"
+        /** The raw answer ("null" = never set); anything that isn't "null" or a number is a failed read. */
+        private suspend fun rawScale(adb: AdbClient, key: String): String {
+            val text = read(adb, "animation settings", "settings get global $key").trim()
+            if (text != "null" && text.toFloatOrNull() == null) {
+                throw TvReadException("animation settings", "unexpected value '$text' for $key")
+            }
+            return text
+        }
 
-        private fun scales(values: List<Float>) = values.joinToString(",")
+        /** Same rule as the inventory: never set means the default 1.0. */
+        private fun valueOf(raw: String): Float = if (raw == "null") 1.0f else raw.toFloat()
+
+        private suspend fun appop(adb: AdbClient, pkg: String, op: String): String =
+            Parsers.appop(read(adb, "background setting", "cmd appops get $pkg $op"), op) ?: "default"
+
+        private fun joined(values: List<String>) = values.joinToString(",")
+
+        private suspend fun bootId(adb: AdbClient): String =
+            read(adb, "restart check", BOOT_ID).trim().ifEmpty { throw TvReadException("restart check", "empty boot id") }
     }
 
     /**
-     * Bounds every shell call: a read on a wedged connection can't be cancelled, only ended by closing the socket,
-     * so on timeout the connection is closed and [AdbError.Timeout] thrown (the runner then reconnects).
+     * Bounds every call to the TV: a read on a wedged connection (the TV left the Wi-Fi without closing TCP) can't
+     * be cancelled, only ended by closing the socket. On timeout the connection is closed and [AdbError.Timeout]
+     * thrown (the runner then reconnects), except for [reboot]: a reboot command that never answers is taken as
+     * sent. Closing the connection makes LauncherSwap's "is it still up?" probe answer "gone" even if the command
+     * never reached the TV, so that probe proves nothing; the runner compares the TV's boot_id before and after.
      */
     private class TimedAdbClient(private val inner: AdbClient) : AdbClient by inner {
-        override suspend fun shell(cmd: String): ShellResult = coroutineScope {
-            val work = async { inner.shell(cmd) }
-            if (withTimeoutOrNull(SHELL_TIMEOUT_MS) { work.join() } == null) {
+        override suspend fun shell(cmd: String): ShellResult = bounded(SHELL_TIMEOUT_MS) { inner.shell(cmd) }
+        override suspend fun install(apk: File): ShellResult = bounded(INSTALL_TIMEOUT_MS) { inner.install(apk) }
+        override suspend fun push(local: File, remote: String) = bounded(TRANSFER_TIMEOUT_MS) { inner.push(local, remote) }
+        override suspend fun pull(remote: String, local: File) = bounded(TRANSFER_TIMEOUT_MS) { inner.pull(remote, local) }
+        override suspend fun reboot() {
+            try {
+                bounded(REBOOT_TIMEOUT_MS) { inner.reboot() }
+            } catch (_: AdbError.Timeout) {
+                // Sent, as far as anyone can tell; the connection is closed now.
+            }
+        }
+
+        private suspend fun <T> bounded(timeoutMs: Long, block: suspend () -> T): T = coroutineScope {
+            val work = async { block() }
+            if (withTimeoutOrNull(timeoutMs) { work.join() } == null) {
                 runCatching { inner.close() }
                 work.cancel()
                 throw AdbError.Timeout()
@@ -659,12 +789,24 @@ class CleanupRunner(
     private companion object {
         val BACKOFF_MS = listOf(2_000L, 5_000L, 10_000L)
         const val SHELL_TIMEOUT_MS = 60_000L
+        const val INSTALL_TIMEOUT_MS = 5 * 60_000L
+        const val TRANSFER_TIMEOUT_MS = 2 * 60_000L
+        const val REBOOT_TIMEOUT_MS = 15_000L
         val ANIMATION_KEYS = listOf("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
+        const val RUN_IN_BACKGROUND = "RUN_IN_BACKGROUND"
         const val RUN_ANY_IN_BACKGROUND = "RUN_ANY_IN_BACKGROUND"
         const val IGNORE = "ignore"
         const val REMOVED = "removed"
         const val RESOLVE_HOME =
             "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME"
+        const val QUERY_HOME =
+            "cmd package query-activities -a android.intent.action.MAIN -c android.intent.category.HOME"
+        /** Never "the" home screen (mirrors LauncherSwap): chooser, fallback home, setup wizard. */
+        val NOT_A_REAL_HOME = setOf("android", "com.android.tv.settings", "com.google.android.tungsten.setupwraith")
+        const val BOOT_ID = "cat /proc/sys/kernel/random/boot_id"
+        const val NO_RESTART = "The TV didn't restart. Tap Retry."
+        const val CHANGED_ELSEWHERE =
+            "This TV was changed from another phone while you were away. Check the TV again before carrying on"
         const val LOST = "Lost connection to the TV. Check it's on and on the same Wi-Fi, then tap Retry"
         const val SWAP_UNKNOWN = "Couldn't check the TV's home screen. Check the TV is on, then tap Retry"
         const val NO_COMEBACK = "The TV didn't come back after restarting. Check it's on, then tap Retry"

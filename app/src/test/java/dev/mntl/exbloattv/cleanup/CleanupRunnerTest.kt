@@ -23,6 +23,7 @@ import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -52,6 +53,7 @@ class CleanupRunnerTest {
     /** Packages whose `pm uninstall -k --user 0` prints Success but changes nothing. */
     private val stubbornRemovals = mutableSetOf<String>()
     private val settings = mutableMapOf<String, String>()
+    /** "<pkg> <op>" -> mode. */
     private val appops = mutableMapOf<String, String>()
     /** Runs after the TV acted on a command; throwing here simulates the reply being lost. */
     private var afterCommand: (String) -> Unit = {}
@@ -66,6 +68,13 @@ class CleanupRunnerTest {
     private var tvDown = false
     private var neverBoots = false
     private var onBoot: () -> Unit = {}
+    /** The next [hangInstalls] installs never return; a reboot never answers when [hangReboot]. */
+    private var hangInstalls = 0
+    private var hangReboot = false
+    /** The reboot command is lost: the TV never restarts, and the call never answers. */
+    private var rebootIgnored = false
+    /** Changes on every boot, like the kernel's. */
+    private var bootId = "boot-1"
 
     init {
         tv.installed += listOf(ADS, OTHER, THIRD, GAMES, USERAPP)
@@ -115,15 +124,17 @@ class CleanupRunnerTest {
             settings[m.groupValues[1]] = m.groupValues[2]
             return ok("")
         }
-        Regex("""^cmd appops get (\S+) RUN_ANY_IN_BACKGROUND$""").matchEntire(cmd)?.let { m ->
-            return ok(appops[m.groupValues[1]]?.let { "RUN_ANY_IN_BACKGROUND: $it; time=+2m ago\n" } ?: "No operations.\n")
+        Regex("""^cmd appops get (\S+) (\S+)$""").matchEntire(cmd)?.let { m ->
+            val op = m.groupValues[2]
+            return ok(appops["${m.groupValues[1]} $op"]?.let { "$op: $it; time=+2m ago\n" } ?: "No operations.\n")
         }
-        Regex("""^cmd appops set (\S+) RUN_ANY_IN_BACKGROUND (\S+)$""").matchEntire(cmd)?.let { m ->
-            appops[m.groupValues[1]] = m.groupValues[2]
+        Regex("""^cmd appops set (\S+) (\S+) (\S+)$""").matchEntire(cmd)?.let { m ->
+            appops["${m.groupValues[1]} ${m.groupValues[2]}"] = m.groupValues[3]
             return ok("")
         }
         if (cmd == "pm trim-caches 999G") return ok("")
         if (cmd == "getprop sys.boot_completed") return ok("1\n")
+        if (cmd == BOOT_ID) return ok("$bootId\n")
         return false
     }
 
@@ -135,12 +146,20 @@ class CleanupRunnerTest {
             if (closed || tvDown) throw AdbError.Disconnected()
             return tv.adb.shell(cmd)
         }
-        override suspend fun install(apk: File): ShellResult = tv.adb.install(apk)
+        override suspend fun install(apk: File): ShellResult {
+            if (hangInstalls > 0) {
+                hangInstalls--
+                awaitCancellation() // the TV left the Wi-Fi mid-transfer without closing TCP
+            }
+            return tv.adb.install(apk)
+        }
         override suspend fun push(local: File, remote: String) = tv.adb.push(local, remote)
         override suspend fun pull(remote: String, local: File) = tv.adb.pull(remote, local)
         override suspend fun reboot() {
             tv.adb.reboot()
+            if (rebootIgnored) awaitCancellation()
             tvDown = true
+            if (hangReboot) awaitCancellation()
         }
         override fun close() {
             closed = true
@@ -165,6 +184,7 @@ class CleanupRunnerTest {
             if (tvDown) {
                 if (neverBoots) throw AdbError.Refused()
                 tvDown = false
+                bootId = "boot-${connects}"
                 onBoot()
             }
             Conn()
@@ -178,8 +198,10 @@ class CleanupRunnerTest {
     )
 
     /** What the TV looks like now, as the Reading screen would have seen it. */
+    private var sdkInt = 28
+
     private fun before() = Inventory(
-        info = TvInfo(serial, "MIBOX4", "Xiaomi", "Xiaomi", "9", 28),
+        info = TvInfo(serial, "MIBOX4", "Xiaomi", "Xiaomi", "9", sdkInt),
         packages = tv.installed.map {
             InstalledPackage(it, "/data/app/$it/base.apk", null, 10_000, it !in userApps, it !in tv.disabled)
         },
@@ -217,7 +239,7 @@ class CleanupRunnerTest {
     // --- happy path -----------------------------------------------------------------------------------------
 
     @Test fun happyPathRunsEveryStepVerifiesItAndLogsChangesInOrder() = runTest {
-        appops[NETFLIX] = "allow"
+        appops["$NETFLIX RUN_ANY_IN_BACKGROUND"] = "allow"
         val plan = listOf(
             Step.Disable(ADS), Step.Enable(GAMES), Step.InstallExisting(MUSIC), Step.Uninstall(USERAPP),
             Step.SetAnimations(0.5f), Step.RestrictBackground(NETFLIX), Step.TrimCaches,
@@ -240,11 +262,12 @@ class CleanupRunnerTest {
             listOf(ChangeKind.ENABLE, GAMES, "disabled", "enabled"),
             listOf(ChangeKind.INSTALL_EXISTING, MUSIC, "removed", "installed"),
             listOf(ChangeKind.UNINSTALL, USERAPP, "installed", "deleted"),
-            listOf(ChangeKind.ANIMATIONS, null, "1.0,1.0,1.0", "0.5,0.5,0.5"),
-            listOf(ChangeKind.APPOPS, NETFLIX, "allow", "ignore"),
+            listOf(ChangeKind.ANIMATIONS, null, "null,null,null", "0.5,0.5,0.5"),
+            listOf(ChangeKind.APPOPS, NETFLIX, "RUN_IN_BACKGROUND=default", "RUN_IN_BACKGROUND=ignore"),
+            listOf(ChangeKind.APPOPS, NETFLIX, "RUN_ANY_IN_BACKGROUND=allow", "RUN_ANY_IN_BACKGROUND=ignore"),
         ).inOrder()
         assertThat(changes.all { it.verified && it.byPhone == phone }).isTrue()
-        assertThat(changes.map { it.id }.toSet()).hasSize(6)
+        assertThat(changes.map { it.id }.toSet()).hasSize(7)
         assertThat(state().lock).isNull()
 
         assertThat(tv.disabled).contains(ADS)
@@ -252,7 +275,7 @@ class CleanupRunnerTest {
         assertThat(tv.installed).contains(MUSIC)
         assertThat(tv.installed).doesNotContain(USERAPP)
         assertThat(settings.values.toList()).isEqualTo(listOf("0.5", "0.5", "0.5"))
-        assertThat(appops[NETFLIX]).isEqualTo("ignore")
+        assertThat(appops).containsExactly("$NETFLIX RUN_IN_BACKGROUND", "ignore", "$NETFLIX RUN_ANY_IN_BACKGROUND", "ignore")
 
         assertThat(tvCommands()).containsExactly(
             RESOLVE_HOME, "pm list packages -d $ADS", "pm list packages $ADS", disableCmd(ADS), "pm list packages -d $ADS",
@@ -266,6 +289,8 @@ class CleanupRunnerTest {
             "settings put global animator_duration_scale 0.5",
             "settings get global window_animation_scale", "settings get global transition_animation_scale",
             "settings get global animator_duration_scale",
+            "cmd appops get $NETFLIX RUN_IN_BACKGROUND", "cmd appops set $NETFLIX RUN_IN_BACKGROUND ignore",
+            "cmd appops get $NETFLIX RUN_IN_BACKGROUND",
             "cmd appops get $NETFLIX RUN_ANY_IN_BACKGROUND", "cmd appops set $NETFLIX RUN_ANY_IN_BACKGROUND ignore",
             "cmd appops get $NETFLIX RUN_ANY_IN_BACKGROUND",
             "pm trim-caches 999G",
@@ -288,8 +313,41 @@ class CleanupRunnerTest {
     @Test fun backgroundSettingThatWasNeverSetIsRecordedAsDefault() = runTest {
         runner().run(listOf(Step.RestrictBackground(NETFLIX)), before()).toList()
 
-        assertThat(state().changes.single().from).isEqualTo("default")
-        assertThat(state().changes.single().verified).isTrue()
+        assertThat(state().changes.map { it.from })
+            .containsExactly("RUN_IN_BACKGROUND=default", "RUN_ANY_IN_BACKGROUND=default").inOrder()
+        assertThat(state().changes.all { it.verified }).isTrue()
+    }
+
+    @Test fun beforeAndroid9OnlyRunInBackgroundIsSet() = runTest {
+        sdkInt = 26
+
+        val last = runner().run(listOf(Step.RestrictBackground(NETFLIX)), before()).toList().last()
+
+        assertThat(last.steps[1].status).isEqualTo(DONE)
+        assertThat(state().changes.map { it.from to it.to })
+            .containsExactly("RUN_IN_BACKGROUND=default" to "RUN_IN_BACKGROUND=ignore")
+        assertThat(tvCommands().none { "RUN_ANY_IN_BACKGROUND" in it }).isTrue()
+    }
+
+    @Test fun backgroundOpAlreadyIgnoredIsLeftAloneAndTheOtherIsSet() = runTest {
+        appops["$NETFLIX RUN_IN_BACKGROUND"] = "ignore"
+
+        runner().run(listOf(Step.RestrictBackground(NETFLIX)), before()).toList()
+
+        assertThat(state().changes.map { it.from }).containsExactly("RUN_ANY_IN_BACKGROUND=default")
+        assertThat(tvCommands()).doesNotContain("cmd appops set $NETFLIX RUN_IN_BACKGROUND ignore")
+    }
+
+    @Test fun animationsLogTheRawValuesKeepingNullForAScaleNeverSet() = runTest {
+        settings["window_animation_scale"] = "1.0"
+        settings["animator_duration_scale"] = "1.0"
+
+        runner().run(listOf(Step.SetAnimations(0.5f)), before()).toList()
+
+        val change = state().changes.single()
+        assertThat(change.from).isEqualTo("1.0,null,1.0")
+        assertThat(change.to).isEqualTo("0.5,0.5,0.5")
+        assertThat(change.verified).isTrue()
     }
 
     // --- restore point --------------------------------------------------------------------------------------
@@ -390,6 +448,59 @@ class CleanupRunnerTest {
         assertThat(c.last.steps[1].message).isEqualTo("This app keeps the TV working, so it was left on")
         assertThat(tvCommands().filter { it.startsWith("pm disable-user") || it.startsWith("pm uninstall") }).isEmpty()
         assertThat(state().changes).isEmpty()
+        c.job.cancel()
+    }
+
+    @Test fun homeScreenThatDoesNotResolveProtectsEveryHomeCandidate() = runTest {
+        tv.homePriority[FLAUNCHER_PKG] = 1 // tie with the stock launcher: HOME shows the chooser ("android")
+        tv.installed += FLAUNCHER_PKG
+
+        val c = start(runner(), listOf(Step.Disable(STOCK), Step.Disable(FLAUNCHER_PKG), Step.Disable(ADS)))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED, FAILED, DONE))
+        assertThat(c.last.steps[1].message).isEqualTo("This app keeps the TV working, so it was left on")
+        assertThat(tvCommands().filter { it.startsWith("pm disable-user") }).containsExactly(disableCmd(ADS))
+        c.job.cancel()
+    }
+
+    @Test fun fallbackHomeIsNotARealHomeScreenSoEveryCandidateIsProtected() = runTest {
+        tv.disabled += STOCK // HOME falls back to the black-screen settings home
+        tv.installed += OTHER_HOME
+        tv.homePriority[OTHER_HOME] = -2000
+
+        val c = start(runner(), listOf(Step.Disable(OTHER_HOME), Step.Disable(ADS)))
+        advanceUntilIdle()
+
+        assertThat(tv.resolvedHome()).isEqualTo(FakeTv.TV_SETTINGS)
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED, DONE))
+        assertThat(tvCommands()).doesNotContain(disableCmd(OTHER_HOME))
+        c.job.cancel()
+    }
+
+    @Test fun setupWizardHoldingHomeIsNotARealHomeScreen() = runTest {
+        tv.homePriority[SETUPWRAITH] = 5
+
+        val c = start(runner(), listOf(Step.Disable(STOCK)))
+        advanceUntilIdle()
+
+        assertThat(tv.resolvedHome()).isEqualTo(SETUPWRAITH)
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED))
+        assertThat(tvCommands()).doesNotContain(disableCmd(STOCK))
+        c.job.cancel()
+    }
+
+    @Test fun emptyHomeScreenListIsAFailedReadNotPermissionToSwitchOff() = runTest {
+        tv.homePriority[FLAUNCHER_PKG] = 1 // tie: HOME shows the chooser
+        tv.installed += FLAUNCHER_PKG
+        afterCommand = { if (it == FakeTv.QUERY_HOME) tv.adb.responses[it] = "0 activities found:\n" }
+
+        val c = start(runner(), listOf(Step.Disable(ADS)))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED))
+        assertThat(c.last.steps[1].message).isEqualTo("Couldn't check the TV (home screen apps). Tap Retry")
+        assertThat(tvCommands()).doesNotContain(disableCmd(ADS))
         c.job.cancel()
     }
 
@@ -598,6 +709,83 @@ class CleanupRunnerTest {
         assertThat(state().lock).isEqualTo(Lock("Mum's phone", 0))
     }
 
+    /** Pauses the run on step 3 (TV unreachable) so another phone can act while this one waits. */
+    private fun TestScope.pausedOnThird(): Pair<CleanupRunner, Collected> {
+        var drop = true
+        afterCommand = { if (it == "pm list packages -d $THIRD" && drop) { drop = false; tvOff = true; throw AdbError.Disconnected() } }
+        val runner = runner()
+        val c = start(runner, listOf(Step.Disable(ADS), Step.Disable(OTHER), Step.Disable(THIRD), Step.TrimCaches))
+        advanceUntilIdle()
+        assertThat(c.last.waitingForTv).isTrue()
+        return runner to c
+    }
+
+    private suspend fun TestScope.resumeAfterAnHour(runner: CleanupRunner, c: Collected) {
+        advanceTimeBy(3_600_000)
+        tvOff = false
+        val mark = tv.adb.log.size
+        runner.retry(3)
+        advanceUntilIdle()
+        assertThat(c.statuses).isEqualTo(listOf(DONE, DONE, DONE, FAILED, PENDING))
+        assertThat(c.last.steps[3].message).isEqualTo(
+            "This TV was changed from another phone while you were away. Check the TV again before carrying on",
+        )
+        assertThat(tv.adb.log.drop(mark).filterNot { FakeTv.isStateFileCommand(it) }).isEmpty()
+
+        runner.retry(3) // still stale: the plan is out of date for good
+        advanceUntilIdle()
+        assertThat(c.statuses[3]).isEqualTo(FAILED)
+        assertThat(tvCommands()).doesNotContain(disableCmd(THIRD))
+        c.job.cancel()
+    }
+
+    @Test fun anotherPhonesUndoWhileWaitingStopsTheRun() = runTest {
+        val (runner, c) = pausedOnThird()
+        // Mum's phone took the expired lock, undid everything, and released it.
+        tv.disabled -= setOf(ADS, OTHER)
+        writeState(state().copy(changes = emptyList(), lock = null))
+
+        resumeAfterAnHour(runner, c)
+        assertThat(state().lock).isNull()
+    }
+
+    @Test fun anotherPhonesChangesWhileWaitingStopTheRunEvenIfTheLockLooksOurs() = runTest {
+        val (runner, c) = pausedOnThird()
+        val s = state()
+        val foreign = s.changes.first().copy(id = "run-mum:1", pkg = THIRD, byPhone = "Mum's phone")
+        writeState(s.copy(changes = s.changes + foreign))
+
+        resumeAfterAnHour(runner, c)
+    }
+
+    @Test fun anotherPhonesInterruptedSwapRolledBackByOurRecoveryDoesNotStopTheRun() = runTest {
+        // Mum's phone switched off the stock home screen and lost the connection before finishing the swap.
+        tv.installed += FLAUNCHER_PKG
+        tv.disabled += STOCK
+        val mumSwap = dev.mntl.exbloattv.state.Change(
+            "swap-5-abcd1234:disable:$STOCK", ChangeKind.DISABLE, STOCK, "enabled", "disabled", "Mum's phone", 5, true,
+        )
+        writeState(TvState(serial = serial, changes = listOf(mumSwap)))
+
+        val last = runner().run(listOf(Step.Disable(ADS), Step.Disable(OTHER)), before()).toList().last()
+
+        assertThat(last.steps.map { it.status }).isEqualTo(List(3) { DONE })
+        assertThat(tv.disabled).doesNotContain(STOCK) // our recovery put Mum's half-done swap back
+        assertThat(state().changes.map { it.pkg }).containsExactly(ADS, OTHER).inOrder()
+    }
+
+    @Test fun ourOwnExpiredLockIsTakenBackAndTheRunCarriesOn() = runTest {
+        val (runner, c) = pausedOnThird()
+        advanceTimeBy(3_600_000)
+        tvOff = false
+
+        runner.retry(3)
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(List(5) { DONE })
+        assertThat(c.job.isCompleted).isTrue()
+    }
+
     @Test fun cancellingFinishesTheCurrentStepsLoggingThenReleasesTheLock() = runTest {
         lateinit var c: Collected
         afterCommand = { if (it == disableCmd(OTHER)) c.job.cancel() }
@@ -660,6 +848,77 @@ class CleanupRunnerTest {
         c.job.cancel()
     }
 
+    @Test fun installThatHangsIsBoundedThenRetriedOnAFreshConnection() = runTest {
+        hangInstalls = 1
+
+        val last = runner().run(listOf(Step.SwapLauncher), before()).toList().last()
+
+        assertThat(last.steps[1].status).isEqualTo(DONE)
+        assertThat(testScheduler.currentTime).isAtLeast(5 * 60_000L)
+        assertThat(connects).isEqualTo(2)
+        assertThat(tv.resolvedHome()).isEqualTo(FLAUNCHER_PKG)
+        val installs = state().changes.filter { it.kind == ChangeKind.INSTALL_APK }
+        assertThat(installs.map { it.verified }).containsExactly(true)
+        assertThat(state().changes.all { it.verified }).isTrue()
+    }
+
+    @Test fun rebootThatNeverAnswersCountsAsSent() = runTest {
+        hangReboot = true
+
+        val last = runner().run(listOf(Step.Disable(ADS), Step.RebootAndVerify), before()).toList().last()
+
+        assertThat(last.steps.map { it.status }).isEqualTo(List(3) { DONE })
+        assertThat(tvCommands().count { it == "reboot" }).isEqualTo(1)
+        assertThat(state().lock).isNull()
+    }
+
+    @Test fun restartThatNeverHappensIsFailedNotDone() = runTest {
+        rebootIgnored = true
+
+        val c = start(runner(), listOf(Step.Disable(ADS), Step.RebootAndVerify))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, DONE, FAILED))
+        assertThat(c.last.steps[2].message).isEqualTo("The TV didn't restart. Tap Retry.")
+        assertThat(c.seen.none { it.steps[2].status == DONE }).isTrue()
+        c.job.cancel()
+    }
+
+    @Test fun retryAfterARestartThatDidNotHappenRestartsAgain() = runTest {
+        rebootIgnored = true
+        val runner = runner()
+        val c = start(runner, listOf(Step.Disable(ADS), Step.RebootAndVerify))
+        advanceUntilIdle()
+        assertThat(c.statuses[2]).isEqualTo(FAILED)
+
+        rebootIgnored = false
+        runner.retry(2)
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, DONE, DONE))
+        assertThat(tvCommands().count { it == "reboot" }).isEqualTo(2)
+        assertThat(c.job.isCompleted).isTrue()
+    }
+
+    @Test fun swapUndoneByALaterRecoveryIsShownFailedRightAway() = runTest {
+        var drop = true
+        afterCommand = {
+            if (it == "pm trim-caches 999G" && drop) {
+                drop = false
+                tv.disabled -= STOCK // the stock home screen came back on behind FLauncher's back
+                throw AdbError.Disconnected()
+            }
+        }
+
+        val c = start(runner(), listOf(Step.SwapLauncher, Step.TrimCaches))
+        advanceUntilIdle()
+
+        assertThat(c.statuses).isEqualTo(listOf(DONE, FAILED, DONE))
+        // Emitted while the trim step was still running, not only when it finished.
+        assertThat(c.seen.any { it.steps[1].status == FAILED && it.steps[2].status == StepStatus.RUNNING }).isTrue()
+        c.job.cancel()
+    }
+
     @Test fun restartReconnectsAndConfirmsEverythingStayedOff() = runTest {
         val last = runner().run(listOf(Step.Disable(ADS), Step.SwapLauncher, Step.RebootAndVerify), before())
             .toList().last()
@@ -703,6 +962,8 @@ class CleanupRunnerTest {
         const val MUSIC = "com.example.music"
         const val USERAPP = "com.example.userapp"
         const val NETFLIX = "com.netflix.ninja"
+        const val OTHER_HOME = "com.example.otherhome"
         const val MANUFACTURER = "getprop ro.product.manufacturer"
+        const val BOOT_ID = "cat /proc/sys/kernel/random/boot_id"
     }
 }
