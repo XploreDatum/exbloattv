@@ -96,6 +96,14 @@ class FakeTv(val adb: FakeAdbClient = FakeAdbClient()) {
             out[cmd] = "Package $p new state: disabled-user\n"
             return 0
         }
+        Regex("""^pm uninstall (\S+)$""").matchEntire(cmd)?.let { m ->
+            val p = m.groupValues[1]
+            if (!installed.remove(p)) { out[cmd] = "Failure [DELETE_FAILED_INTERNAL_ERROR]\n"; return 1 }
+            disabled -= p
+            if (foreground == p) foreground = null
+            out[cmd] = "Success\n"
+            return 0
+        }
         Regex("""^pm enable (\S+)$""").matchEntire(cmd)?.let { m ->
             val p = m.groupValues[1]
             disabled -= p

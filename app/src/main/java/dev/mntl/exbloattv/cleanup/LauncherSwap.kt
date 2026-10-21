@@ -47,7 +47,9 @@ class TvRestartTimeoutException(val timeoutMs: Long, cause: Throwable? = null) :
  *   FLauncher is verified as the home screen.
  * - On rollback, the `DISABLE` entries of packages verified back on (and the `LAUNCHER_SWAP`, after a restart) are
  *   removed, so the log never claims a package is off when it is on. No `ENABLE` reversal is appended: Undo would
- *   turn it back into a disable of the stock launcher.
+ *   turn it back into a disable of the stock launcher. If this swap installed FLauncher, rollback uninstalls it
+ *   (after the old home screen is back on, so HOME can't land on a chooser) and removes its `INSTALL_APK` entry;
+ *   a FLauncher that was already on the TV is the person's app and stays.
  *
  * [store] must talk to the same TV connection passed to each call. After a restart, build a new [LauncherSwap]
  * with a store on the reconnected client before calling [verifyAfterReboot].
@@ -65,7 +67,10 @@ class LauncherSwap(
         if (homeBefore == FLAUNCHER_PKG) return SwapResult.AlreadyDone
 
         val swapId = "swap-${now()}-${UUID.randomUUID().toString().take(8)}"
-        prepareFlauncher(adb, serial, swapId)?.let { return SwapResult.RolledBack(it) }
+        val installId = when (val prep = prepareFlauncher(adb, serial, swapId)) {
+            is Prep.Failed -> return SwapResult.RolledBack(prep.reason)
+            is Prep.Ready -> if (prep.installedHere) "$swapId:install" else null
+        }
 
         // Packages this swap tried to switch off; added before the command so a lost connection still rolls them back.
         val touched = mutableListOf<String>()
@@ -74,14 +79,14 @@ class LauncherSwap(
         } catch (e: Throwable) {
             withContext(NonCancellable) {
                 try {
-                    rollback(adb, serial, swapId, touched, emptySet(), "")
+                    rollback(adb, serial, swapId, touched, installId, emptySet(), "")
                 } catch (rollbackError: Throwable) {
                     e.addSuppressed(rollbackError)
                 }
             }
             throw e
         }
-        return rollback(adb, serial, swapId, touched, emptySet(), failure)
+        return rollback(adb, serial, swapId, touched, installId, emptySet(), failure)
     }
 
     /** Presses HOME after a restart and checks FLauncher comes up; if not, undoes the last logged swap. */
@@ -94,7 +99,11 @@ class LauncherSwap(
         val disabled = if (swapId == null) emptyList() else changes
             .filter { it.kind == ChangeKind.DISABLE && it.id.startsWith("$swapId:disable:") }
             .mapNotNull { it.pkg }
-        return rollback(adb, serial, swapId, disabled, setOfNotNull(swap?.id), AFTER_RESTART)
+        // Installed by this swap = an INSTALL_APK entry with the same swap id; otherwise it is the person's own copy.
+        val installId = swapId?.let { id ->
+            changes.firstOrNull { it.kind == ChangeKind.INSTALL_APK && it.id == "$id:install" }?.id
+        }
+        return rollback(adb, serial, swapId, disabled, installId, setOfNotNull(swap?.id), AFTER_RESTART)
     }
 
     /**
@@ -150,31 +159,37 @@ class LauncherSwap(
 
     // --- steps --------------------------------------------------------------------------------------------
 
-    /** Makes sure FLauncher is installed and switched on. Returns a failure reason, or null when ready. */
-    private suspend fun prepareFlauncher(adb: AdbClient, serial: String, swapId: String): String? {
+    private sealed interface Prep {
+        data class Ready(val installedHere: Boolean) : Prep
+        data class Failed(val reason: String) : Prep
+    }
+
+    /** Makes sure FLauncher is installed and switched on. */
+    private suspend fun prepareFlauncher(adb: AdbClient, serial: String, swapId: String): Prep {
         if (!listed(adb, "", FLAUNCHER_PKG)) {
             val apk = try {
                 downloader.fetch(FLAUNCHER_URL, FLAUNCHER_SHA256)
             } catch (e: ChecksumMismatch) {
-                return "The new home screen download didn't match the expected file, so it wasn't used"
+                return Prep.Failed("The new home screen download didn't match the expected file, so it wasn't used")
             } catch (e: IOException) {
-                return "Couldn't download the new home screen. Check the phone's internet connection"
+                return Prep.Failed("Couldn't download the new home screen. Check the phone's internet connection")
             }
             try {
                 adb.install(apk)
             } catch (e: AdbError.TransferFailed) {
-                return INSTALL_FAILED
+                return Prep.Failed(INSTALL_FAILED)
             } catch (e: AdbError.LocalFile) {
-                return INSTALL_FAILED
+                return Prep.Failed(INSTALL_FAILED)
             }
-            if (!listed(adb, "", FLAUNCHER_PKG)) return INSTALL_FAILED
+            if (!listed(adb, "", FLAUNCHER_PKG)) return Prep.Failed(INSTALL_FAILED)
             log(serial, "$swapId:install", ChangeKind.INSTALL_APK, FLAUNCHER_PKG, "not installed", FLAUNCHER_VERSION)
+            return Prep.Ready(installedHere = true)
         } else if (listed(adb, "-d", FLAUNCHER_PKG)) {
             adb.shell("pm enable $FLAUNCHER_PKG")
-            if (!listed(adb, "-e", FLAUNCHER_PKG)) return "Couldn't switch on the new home screen"
+            if (!listed(adb, "-e", FLAUNCHER_PKG)) return Prep.Failed("Couldn't switch on the new home screen")
             log(serial, "$swapId:enable:$FLAUNCHER_PKG", ChangeKind.ENABLE, FLAUNCHER_PKG, "disabled", "enabled")
         }
-        return null
+        return Prep.Ready(installedHere = false)
     }
 
     /** Opens FLauncher, switches off the stock home screen(s) and confirms HOME. Returns a failure reason or null. */
@@ -208,14 +223,17 @@ class LauncherSwap(
     }
 
     /**
-     * Switches [pkgs] back on (newest first), presses HOME, checks a home screen other than FLauncher is in front,
-     * then drops the `DISABLE` entries of the packages verified back on, plus [dropIds], from the log.
+     * Switches [pkgs] back on (newest first), uninstalls FLauncher if this swap installed it ([installId] non-null;
+     * otherwise it stays as the person's app), presses HOME, checks a home screen other than FLauncher is in front,
+     * then drops from the log the `DISABLE` entries of packages verified back on, [installId] once FLauncher is
+     * verified gone, and [dropIds].
      */
     private suspend fun rollback(
         adb: AdbClient,
         serial: String,
         swapId: String?,
         pkgs: List<String>,
+        installId: String?,
         dropIds: Set<String>,
         reason: String,
     ): SwapResult.RolledBack {
@@ -224,11 +242,17 @@ class LauncherSwap(
             adb.shell("pm enable $pkg")
             if (listed(adb, "-e", pkg)) restored += pkg
         }
+        // Only after the old home screen is back on, so the TV is never left with no home app.
+        val uninstalled = installId != null && run {
+            adb.shell("pm uninstall $FLAUNCHER_PKG")
+            !listed(adb, "", FLAUNCHER_PKG)
+        }
         adb.shell(HOME_KEY)
         val homes = homePackages(adb).orEmpty() - FLAUNCHER_PKG
-        val back = restored.size == pkgs.size && poll { foreground(adb).let { it != null && it in homes } }
+        val back = restored.size == pkgs.size && (installId == null || uninstalled) &&
+            poll { foreground(adb).let { it != null && it in homes } }
         // Log last: a state-file failure must not stop the TV getting its home screen back.
-        val drop = dropIds + restored.map { "$swapId:disable:$it" }
+        val drop = dropIds + restored.map { "$swapId:disable:$it" } + listOfNotNull(installId.takeIf { uninstalled })
         if (drop.isNotEmpty()) store.removeChanges(serial, drop)
         return SwapResult.RolledBack(
             if (back) "$reason. Your old home screen is back"

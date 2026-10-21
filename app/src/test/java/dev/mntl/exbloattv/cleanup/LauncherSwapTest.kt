@@ -137,11 +137,23 @@ class LauncherSwapTest {
         val cmds = tvCommands()
         val firstHome = cmds.indexOf(home)
         val tail = cmds.drop(firstHome + 1)
-        assertThat(tail).containsAtLeast("pm enable $SETUPWRAITH", "pm enable $STOCK", home).inOrder()
+        // FLauncher, installed by this swap, goes only after the old home screen is back on; then HOME.
+        assertThat(tail).containsAtLeast("pm enable $SETUPWRAITH", "pm enable $STOCK", "pm uninstall $FLAUNCHER_PKG", home).inOrder()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
         assertThat(tv.foreground).isEqualTo(STOCK)
         assertThat(testScheduler.currentTime).isAtLeast(15_000L)
-        // Undo must never see a DISABLE for a package that is enabled again, nor a swap that did not happen.
-        assertThat(changes().map { it.kind }).containsExactly(ChangeKind.INSTALL_APK)
+        // Undo must never see a DISABLE for a package that is enabled again, a swap that did not happen,
+        // or an install that was removed.
+        assertThat(changes()).isEmpty()
+    }
+
+    @Test fun rollbackKeepsAPreinstalledFlauncher() = runTest {
+        tv.installed += FLAUNCHER_PKG
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        assertThat(swapper().swap(tv.adb, serial)).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tvCommands().none { it.startsWith("pm uninstall") }).isTrue()
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        assertThat(tv.disabled).isEmpty()
     }
 
     @Test fun unwritableStateFileDoesNotStopTheTvGettingItsHomeBack() = runTest {
@@ -165,8 +177,8 @@ class LauncherSwapTest {
         val result = swapper().swap(tv.adb, serial)
         assertThat(result).isInstanceOf(SwapResult.RolledBack::class.java)
         assertThat(tv.disabled).isEmpty()
-        assertThat(tvCommands()).contains("pm enable $STOCK")
-        assertThat(changes().map { it.kind }).containsExactly(ChangeKind.INSTALL_APK)
+        assertThat(tvCommands()).containsAtLeast("pm enable $STOCK", "pm uninstall $FLAUNCHER_PKG").inOrder()
+        assertThat(changes()).isEmpty()
     }
 
     @Test fun monkeyNotEnoughFallsBackToAmStartOnce() = runTest {
@@ -251,8 +263,9 @@ class LauncherSwapTest {
         tv.adb.failNext(home, AdbError.Disconnected())
         thrown<AdbError.Disconnected> { swapper().swap(tv.adb, serial) }
         assertThat(tv.disabled).isEmpty()
-        assertThat(tvCommands()).containsAtLeast("pm enable $SETUPWRAITH", "pm enable $STOCK")
-        assertThat(changes().map { it.kind }).containsExactly(ChangeKind.INSTALL_APK)
+        assertThat(tvCommands()).containsAtLeast("pm enable $SETUPWRAITH", "pm enable $STOCK", "pm uninstall $FLAUNCHER_PKG").inOrder()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
+        assertThat(changes()).isEmpty()
     }
 
     // --- verifyAfterReboot --------------------------------------------------------------------------------
@@ -277,9 +290,24 @@ class LauncherSwapTest {
 
         assertThat(result).isInstanceOf(SwapResult.RolledBack::class.java)
         assertThat(tv.disabled).isEmpty()
-        assertThat(tvCommands()).containsAtLeast("pm enable $SETUPWRAITH", "pm enable $STOCK", home).inOrder()
+        assertThat(tvCommands())
+            .containsAtLeast("pm enable $SETUPWRAITH", "pm enable $STOCK", "pm uninstall $FLAUNCHER_PKG", home).inOrder()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
         assertThat(tv.foreground).isEqualTo(STOCK)
-        assertThat(changes().map { it.kind }).containsExactly(ChangeKind.INSTALL_APK)
+        assertThat(changes()).isEmpty()
+    }
+
+    @Test fun verifyAfterRebootKeepsAPreinstalledFlauncher() = runTest {
+        tv.installed += FLAUNCHER_PKG
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        tv.adb.log.clear()
+
+        assertThat(swapper().verifyAfterReboot(tv.adb, serial)).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tvCommands().none { it.startsWith("pm uninstall") }).isTrue()
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        assertThat(tv.disabled).isEmpty()
+        assertThat(changes()).isEmpty()
     }
 
     // --- rebootAndReconnect -------------------------------------------------------------------------------
