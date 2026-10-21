@@ -1,6 +1,8 @@
 package dev.mntl.exbloattv.cleanup
 
 import dev.mntl.exbloattv.adb.FakeAdbClient
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Base64
 
 /**
@@ -27,12 +29,28 @@ class FakeTv(val adb: FakeAdbClient = FakeAdbClient()) {
     var onHome: () -> String? = { resolvedHome() }
     /** The TV's state file system (path -> content). */
     val fs = mutableMapOf<String, String>()
+    /** Commands that fail with a non-zero exit and no output. */
+    val failingReads = mutableSetOf<String>()
+    /** Commands that exit 0 but print a package-manager error instead of an answer. */
+    val errorTextReads = mutableSetOf<String>()
+
+    /** Milliseconds since the test started; the TV's own clock is [TV_START] (its local time) plus this. */
+    var clockMs: () -> Long = { 0L }
+    fun tvLocal(): LocalDateTime = TV_START.plusNanos(clockMs() * 1_000_000)
+    /** First install time (TV local time) per package. */
+    val installTimes = mutableMapOf<String, LocalDateTime>()
+
     /** Makes every state-file write fail (e.g. storage full). */
     var stateWritesFail = false
 
     init {
         adb.onCommand = { cmd -> adb.exitCodes[cmd] = handle(cmd) }
-        adb.onInstall = { if (installWorks) installed += FLAUNCHER_PKG }
+        adb.onInstall = {
+            if (installWorks && FLAUNCHER_PKG !in installed) {
+                installed += FLAUNCHER_PKG
+                installTimes[FLAUNCHER_PKG] = tvLocal()
+            }
+        }
     }
 
     fun homeCandidates() = homePriority.keys.filter { it in installed && it !in disabled }
@@ -53,7 +71,22 @@ class FakeTv(val adb: FakeAdbClient = FakeAdbClient()) {
 
     private fun handle(cmd: String): Int {
         val out = adb.responses
+        if (cmd in failingReads) {
+            out[cmd] = ""
+            return 1
+        }
+        if (cmd in errorTextReads) {
+            out[cmd] = "Exception occurred while executing:\njava.lang.IllegalStateException: package manager busy\n"
+            return 0
+        }
         when {
+            cmd == "date '+%Y-%m-%d %H:%M:%S'" -> out[cmd] = tvLocal().format(STAMP) + "\n"
+            cmd == "dumpsys package $FLAUNCHER_PKG" -> out[cmd] = installTimes[FLAUNCHER_PKG]
+                ?.takeIf { FLAUNCHER_PKG in installed }
+                ?.let {
+                    "Packages:\n  Package [$FLAUNCHER_PKG] (2b1c7a0):\n    userId=10091\n" +
+                        "    firstInstallTime=${it.format(STAMP)}\n    lastUpdateTime=${it.format(STAMP)}\n"
+                } ?: "Dexopt state:\n  Unable to find package: $FLAUNCHER_PKG\n"
             cmd == "getprop ro.product.manufacturer" -> out[cmd] = "$manufacturer\n"
             cmd == RESOLVE_HOME -> out[cmd] = resolvedHome()
                 ?.let { "priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true\n${component(it)}\n" }
@@ -151,6 +184,9 @@ class FakeTv(val adb: FakeAdbClient = FakeAdbClient()) {
     }
 
     companion object {
+        /** Deliberately unrelated to the phone's clock (virtual time starts at 0) and in the TV's own time zone. */
+        val TV_START: LocalDateTime = LocalDateTime.of(2026, 10, 21, 18, 30, 0)
+        private val STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         const val STOCK = "com.google.android.tvlauncher"
         const val TV_SETTINGS = "com.android.tv.settings"
         const val SETUPWRAITH = "com.google.android.tungsten.setupwraith"

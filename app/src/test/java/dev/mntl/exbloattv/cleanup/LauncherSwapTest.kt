@@ -14,6 +14,9 @@ import dev.mntl.exbloattv.state.Change
 import dev.mntl.exbloattv.state.ChangeKind
 import dev.mntl.exbloattv.state.TvStateStore
 import dev.mntl.exbloattv.state.TvStateWriteException
+import dev.mntl.exbloattv.tv.TvReadException
+import kotlin.time.Duration.Companion.days
+import kotlinx.coroutines.delay
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -51,8 +54,10 @@ class LauncherSwapTest {
 
     private val downloader = StubDownloader()
 
-    private fun TestScope.swapper(store: TvStateStore = TvStateStore(tv.adb) { testScheduler.currentTime }) =
-        LauncherSwap(downloader, store, "Pixel 8", testScheduler.timeSource) { testScheduler.currentTime }
+    private fun TestScope.swapper(store: TvStateStore = TvStateStore(tv.adb) { testScheduler.currentTime }): LauncherSwap {
+        tv.clockMs = { testScheduler.currentTime }
+        return LauncherSwap(downloader, store, "Pixel 8", testScheduler.timeSource) { testScheduler.currentTime }
+    }
 
     private suspend fun changes(): List<Change> = TvStateStore(tv.adb).load(serial).changes
 
@@ -462,6 +467,115 @@ class LauncherSwapTest {
         assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
         assertThat(swapper().recover(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
         assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH)
+    }
+
+    // --- round 2: recover() never judges a finished swap by what is on screen ----------------------------
+
+    @Test fun recoverKeepsAFinishedSwapWhileTheTvShowsSomethingElse() = runTest {
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        tv.foreground = "com.netflix.ninja" // or asleep: HOME may not even wake it
+        tv.adb.log.clear()
+        assertThat(swapper().recover(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        assertThat(tvCommands()).containsExactly(RESOLVE_HOME)
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH)
+    }
+
+    @Test fun recoverUndoesAFinishedSwapWhenHomeNoLongerResolvesToFlauncher() = runTest {
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        tv.disabled -= STOCK // e.g. a system update switched the stock launcher back on
+        val result = swapper().recover(tv.adb, serial)
+        assertThat(result).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tv.disabled).isEmpty()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
+        assertThat(changes()).isEmpty()
+    }
+
+    @Test fun recoverWithAnUnreadableHomeChangesNothing() = runTest {
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        tv.failingReads += RESOLVE_HOME
+        tv.adb.log.clear()
+        thrown<TvReadException> { swapper().recover(tv.adb, serial) }
+        assertThat(tvCommands()).containsExactly(RESOLVE_HOME)
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH)
+    }
+
+    // --- round 2: a failed read is never "not installed" / "switched off" ----------------------------------
+
+    @Test fun unreadablePackageListNeverCountsAsNotInstalled() = runTest {
+        tv.installed += FLAUNCHER_PKG // the person's own copy
+        tv.failingReads += "pm list packages $FLAUNCHER_PKG"
+        thrown<TvReadException> { swapper().swap(tv.adb, serial) }
+        assertThat(tv.adb.log.none { it.startsWith("install:") }).isTrue()
+        assertThat(downloader.calls).isEmpty()
+        assertThat(changes()).isEmpty()
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+    }
+
+    @Test fun alreadyDoneFailsClosedWhenSetupWizardStateIsUnreadable() = runTest {
+        tv.installed += FLAUNCHER_PKG
+        tv.disabled += setOf(STOCK, SETUPWRAITH)
+        tv.foreground = FLAUNCHER_PKG
+        tv.errorTextReads += "pm list packages -e $SETUPWRAITH"
+        thrown<TvReadException> { swapper().swap(tv.adb, serial) }
+        assertThat(tvCommands().none { it.startsWith("pm enable") || it.startsWith("pm disable") }).isTrue()
+    }
+
+    @Test fun failedInstallResultIsNeverMarkedVerified() = runTest {
+        tv.adb.installResult = ShellResult("Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]", 1)
+        val result = swapper().swap(tv.adb, serial) // the package shows up anyway: still not trusted
+        assertThat(result).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tvCommands().none { it.startsWith("monkey") }).isTrue()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG) // it appeared right after our attempt: ours
+        assertThat(changes()).isEmpty()
+    }
+
+    @Test fun staleUnfinishedInstallDoesNotUninstallAFlauncherThePersonInstalledLater() = runTest {
+        tv.installWorks = false
+        dropDuringSwap("install") // leaves an unverified INSTALL_APK; nothing was installed
+        assertThat(changes().single().verified).isFalse()
+        delay(3.days)
+        tv.installed += FLAUNCHER_PKG // the person installs it themselves
+        tv.installTimes[FLAUNCHER_PKG] = tv.tvLocal()
+        delay(1.days)
+        tv.installWorks = true
+        tv.adb.log.clear()
+
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+
+        assertThat(tvCommands().none { it.startsWith("pm uninstall") }).isTrue()
+        assertThat(tv.adb.log.none { it.startsWith("install:") }).isTrue()
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        assertThat(changes().map { it.kind }).doesNotContain(ChangeKind.INSTALL_APK)
+    }
+
+    // --- round 2: a hung call can't hang a rollback that can't be cancelled ---------------------------------
+
+    /** The TV stops answering [hangOn] (half-open socket); closing the client fails everything after. */
+    private class HangsOn(private val tv: FakeAdbClient, private val hangOn: String) : AdbClient {
+        var closed = false
+        override val host = "tv"
+        override suspend fun shell(cmd: String): ShellResult {
+            if (closed) throw AdbError.Disconnected()
+            if (cmd == hangOn) awaitCancellation()
+            return tv.shell(cmd)
+        }
+        override suspend fun install(apk: File) = if (closed) throw AdbError.Disconnected() else tv.install(apk)
+        override suspend fun push(local: File, remote: String) = tv.push(local, remote)
+        override suspend fun pull(remote: String, local: File) = tv.pull(remote, local)
+        override suspend fun reboot() = tv.reboot()
+        override fun close() { closed = true }
+    }
+
+    @Test fun hungCallDuringRollbackEndsAndRecoverFinishesTheJob() = runTest {
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        val hanging = HangsOn(tv.adb, "pm enable $SETUPWRAITH")
+        thrown<AdbError> { swapper(TvStateStore(hanging) { testScheduler.currentTime }).swap(hanging, serial) }
+        assertThat(hanging.closed).isTrue()
+
+        assertThat(swapper().recover(tv.adb, serial)).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tv.disabled).isEmpty()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
+        assertThat(changes()).isEmpty()
     }
 
     // --- verifyAfterReboot --------------------------------------------------------------------------------

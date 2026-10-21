@@ -99,6 +99,19 @@ object Parsers {
         return stackResumed.find(display0.joinToString("\n"))?.groupValues?.get(1)
     }
 
+    /** `firstInstallTime=yyyy-MM-dd HH:mm:ss` from `dumpsys package <pkg>`, in the TV's local time; null if absent or odd. */
+    fun firstInstallTime(text: String): java.time.LocalDateTime? =
+        Regex("""firstInstallTime=(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})""").find(text)?.groupValues?.get(1)
+            ?.let { parseTvTime(it) }
+
+    /** Parses `yyyy-MM-dd HH:mm:ss` (the TV's local time, as `dumpsys package` and `date` print it); null if odd. */
+    fun parseTvTime(text: String): java.time.LocalDateTime? =
+        try {
+            java.time.LocalDateTime.parse(text.trim(), java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        } catch (e: java.time.format.DateTimeParseException) {
+            null
+        }
+
     fun appop(text: String, op: String): String? =
         Regex("""^\s*${Regex.escape(op)}:\s*(\w+)""", RegexOption.MULTILINE).find(text)?.groupValues?.get(1)
 

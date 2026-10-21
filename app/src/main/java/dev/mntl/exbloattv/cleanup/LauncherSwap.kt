@@ -50,7 +50,12 @@ class TvRestartTimeoutException(val timeoutMs: Long, cause: Throwable? = null) :
  *   written, verified, only once FLauncher is confirmed as the home screen. A swap without it is unfinished.
  * - Rollback removes the entries of everything it verifiably put back, plus `:home`. Whatever could not be put back
  *   stays logged, so a later [recover] (or Undo) tries again. No `ENABLE` reversal is ever appended: Undo would turn
- *   it into a disable of the stock launcher.
+ *   it into a disable of the stock launcher. An unverified `:install` only leads to an uninstall if FLauncher's first
+ *   install time falls in the swap's window; otherwise it is the person's own copy and stays.
+ *
+ * Reads fail closed: an unreadable answer throws [TvReadException] and never passes for "not installed" or
+ * "switched off". Every TV command has a deadline (a wedged connection is closed and reported as
+ * [AdbError.Timeout]), so no step and no rollback can hang.
  *
  * [store] must talk to the same TV connection passed to each call. After a lost connection or a restart, build a
  * new [LauncherSwap] with a store on the new client, then call [recover] / [verifyAfterReboot].
@@ -64,7 +69,7 @@ class LauncherSwap(
 ) {
     suspend fun swap(adb: AdbClient, serial: String): SwapResult {
         if (isFireTv(adb)) return SwapResult.RolledBack(FIRE_TV)
-        val log = store.load(serial).changes
+        val log = onStore(adb) { store.load(serial) }.changes
         val last = latestSwapId(log)
         val lastDone = last != null && isDone(log, last)
         if (last != null && !lastDone) {
@@ -98,16 +103,17 @@ class LauncherSwap(
     }
 
     /**
-     * Call after reconnecting to a TV where a swap may have been cut off. Undoes an unfinished swap; for a finished
-     * one, presses HOME and keeps it if FLauncher comes up, else undoes it. Null when no swap is logged.
+     * Call after reconnecting to a TV where a swap may have been cut off. Undoes an unfinished swap. A finished one
+     * is kept as long as HOME still resolves to FLauncher; the screen is not looked at or touched (the TV may be
+     * asleep or playing something). Null when no swap is logged. A failed read throws and changes nothing.
      */
-    suspend fun recover(adb: AdbClient, serial: String): SwapResult? = recoverLatest(adb, serial, NOT_HOME)
+    suspend fun recover(adb: AdbClient, serial: String): SwapResult? = recoverLatest(adb, serial, afterRestart = false)
 
     /** Presses HOME after a restart and checks FLauncher comes up; if not, undoes the last logged swap. */
     suspend fun verifyAfterReboot(adb: AdbClient, serial: String): SwapResult =
-        recoverLatest(adb, serial, AFTER_RESTART) ?: run {
-            adb.shell(HOME_KEY)
-            if (poll(adb) { homeIsFlauncher(adb) }) SwapResult.AlreadyDone else SwapResult.RolledBack(AFTER_RESTART)
+        recoverLatest(adb, serial, afterRestart = true) ?: run {
+            sh(adb, HOME_KEY)
+            if (poll { homeIsFlauncher(adb) }) SwapResult.AlreadyDone else SwapResult.RolledBack(AFTER_RESTART)
         }
 
     /**
@@ -180,21 +186,24 @@ class LauncherSwap(
                 return Prep.Failed("Couldn't download the new home screen. Check the phone's internet connection", false)
             }
             val entry = change("$swapId:install", ChangeKind.INSTALL_APK, FLAUNCHER_PKG, "not installed", FLAUNCHER_VERSION)
-            store.appendChange(serial, entry)
-            try {
+            onStore(adb) { store.appendChange(serial, entry) }
+            val result = try {
                 adb.install(apk)
             } catch (e: AdbError.TransferFailed) {
-                // The TV may still have installed it; the check below decides.
+                null
             } catch (e: AdbError.LocalFile) {
+                null
             }
-            if (!listed(adb, "", FLAUNCHER_PKG)) return Prep.Failed(INSTALL_FAILED, true)
-            store.upsertChange(serial, entry.copy(verified = true))
+            // Only a reported success that the TV confirms counts. Otherwise the rollback decides, from the install
+            // time, whether anything that did appear is ours.
+            if (result?.exitCode != 0 || !listed(adb, "", FLAUNCHER_PKG)) return Prep.Failed(INSTALL_FAILED, true)
+            onStore(adb) { store.upsertChange(serial, entry.copy(verified = true)) }
         } else if (listed(adb, "-d", FLAUNCHER_PKG)) {
             val entry = change("$swapId:enable:$FLAUNCHER_PKG", ChangeKind.ENABLE, FLAUNCHER_PKG, "disabled", "enabled")
-            store.appendChange(serial, entry)
-            adb.shell("pm enable $FLAUNCHER_PKG")
+            onStore(adb) { store.appendChange(serial, entry) }
+            sh(adb, "pm enable $FLAUNCHER_PKG")
             if (!listed(adb, "-e", FLAUNCHER_PKG)) return Prep.Failed("Couldn't switch on the new home screen", true)
-            store.upsertChange(serial, entry.copy(verified = true))
+            onStore(adb) { store.upsertChange(serial, entry.copy(verified = true)) }
         }
         return Prep.Ready
     }
@@ -213,28 +222,34 @@ class LauncherSwap(
         }
         for (pkg in stock + listOfNotNull(wizard)) {
             val entry = change("$swapId:disable:$pkg", ChangeKind.DISABLE, pkg, "enabled", "disabled")
-            store.appendChange(serial, entry) // before the command: a lost reply must still leave a record
-            adb.shell("pm disable-user --user 0 $pkg")
+            onStore(adb) { store.appendChange(serial, entry) } // before the command: a lost reply must leave a record
+            sh(adb, "pm disable-user --user 0 $pkg")
             if (!listed(adb, "-d", pkg)) return "Couldn't switch off the old home screen"
-            store.upsertChange(serial, entry.copy(verified = true))
+            onStore(adb) { store.upsertChange(serial, entry.copy(verified = true)) }
         }
-        adb.shell(HOME_KEY)
-        if (!poll(adb) { homeIsFlauncher(adb) }) return "The TV didn't switch to the new home screen"
-        store.appendChange(
-            serial,
-            change("$swapId:home", ChangeKind.LAUNCHER_SWAP, FLAUNCHER_PKG, stock.joinToString(","), FLAUNCHER_PKG)
-                .copy(verified = true),
-        )
+        sh(adb, HOME_KEY)
+        if (!poll { homeIsFlauncher(adb) }) return "The TV didn't switch to the new home screen"
+        onStore(adb) {
+            store.appendChange(
+                serial,
+                change("$swapId:home", ChangeKind.LAUNCHER_SWAP, FLAUNCHER_PKG, stock.joinToString(","), FLAUNCHER_PKG)
+                    .copy(verified = true),
+            )
+        }
         return null
     }
 
-    private suspend fun recoverLatest(adb: AdbClient, serial: String, notHomeReason: String): SwapResult? {
-        val log = store.load(serial).changes
+    private suspend fun recoverLatest(adb: AdbClient, serial: String, afterRestart: Boolean): SwapResult? {
+        val log = onStore(adb) { store.load(serial) }.changes
         val swapId = latestSwapId(log) ?: return null
         if (!isDone(log, swapId)) return rollback(adb, serial, swapId, INTERRUPTED).result
-        adb.shell(HOME_KEY)
-        if (poll(adb) { homeIsFlauncher(adb) }) return SwapResult.Swapped
-        return rollback(adb, serial, swapId, notHomeReason).result
+        if (afterRestart) {
+            sh(adb, HOME_KEY)
+            if (poll { homeIsFlauncher(adb) }) return SwapResult.Swapped
+            return rollback(adb, serial, swapId, AFTER_RESTART).result
+        }
+        if (resolvedHome(adb) == FLAUNCHER_PKG) return SwapResult.Swapped
+        return rollback(adb, serial, swapId, NOT_HOME).result
     }
 
     private class Rollback(val result: SwapResult.RolledBack, val complete: Boolean)
@@ -251,10 +266,10 @@ class LauncherSwap(
      */
     private suspend fun rollback(adb: AdbClient, serial: String, swapId: String, reason: String): Rollback =
         withContext(NonCancellable) {
-            val entries = store.load(serial).changes.filter { it.id.startsWith("$swapId:") }
+            val entries = onStore(adb) { store.load(serial) }.changes.filter { it.id.startsWith("$swapId:") }
             val disabled = entries.filter { it.kind == ChangeKind.DISABLE }.mapNotNull { it.pkg }
             val restored = disabled.asReversed().filter { pkg ->
-                attempt { adb.shell("pm enable $pkg"); listed(adb, "-e", pkg) }
+                attempt { sh(adb, "pm enable $pkg"); listed(adb, "-e", pkg) }
             }
             val allRestored = restored.size == disabled.size
             val realHomes = attemptOrNull { homePackages(adb) }.orEmpty().filter { it !in NOT_A_REAL_HOME }
@@ -263,23 +278,22 @@ class LauncherSwap(
             // Never take FLauncher away before another real home screen is confirmed back.
             val canDropFlauncher = allRestored && realHomes.isNotEmpty()
             val flauncherUndone = when {
-                install != null -> canDropFlauncher &&
-                    attempt { adb.shell("pm uninstall $FLAUNCHER_PKG"); !listed(adb, "", FLAUNCHER_PKG) }
+                install != null -> canDropFlauncher && attempt { undoInstall(adb, install) }
                 switchedOn != null -> canDropFlauncher &&
-                    attempt { adb.shell("pm disable-user --user 0 $FLAUNCHER_PKG"); listed(adb, "-d", FLAUNCHER_PKG) }
+                    attempt { sh(adb, "pm disable-user --user 0 $FLAUNCHER_PKG"); listed(adb, "-d", FLAUNCHER_PKG) }
                 else -> true
             }
-            attempt { adb.shell(HOME_KEY); true }
+            attempt { sh(adb, HOME_KEY); true }
             val expected = restored.filter { it !in NOT_A_REAL_HOME }.ifEmpty { realHomes }
             val back = allRestored && flauncherUndone && expected.isNotEmpty() &&
-                attempt { poll(adb) { foreground(adb) in expected } }
+                attempt { poll { foreground(adb) in expected } }
             // Log last: a state-file failure must not stop the TV getting its home screen back.
             val drop = buildSet {
                 add("$swapId:home")
                 restored.forEach { add("$swapId:disable:$it") }
                 if (flauncherUndone) listOfNotNull(install, switchedOn).forEach { add(it.id) }
             }
-            store.removeChanges(serial, drop)
+            onStore(adb) { store.removeChanges(serial, drop) }
             Rollback(
                 SwapResult.RolledBack(
                     if (back) "$reason. Your old home screen is back"
@@ -289,46 +303,83 @@ class LauncherSwap(
             )
         }
 
+    /**
+     * Removes the FLauncher a swap installed. True once nothing of ours is left: FLauncher is absent or uninstalled,
+     * or the entry was never confirmed and FLauncher's install time shows it is not ours (the person installed it
+     * some other time), in which case it stays.
+     */
+    private suspend fun undoInstall(adb: AdbClient, entry: Change): Boolean {
+        if (!listed(adb, "", FLAUNCHER_PKG)) return true
+        if (!entry.verified && !installedDuring(adb, entry.at)) return true
+        sh(adb, "pm uninstall $FLAUNCHER_PKG")
+        return !listed(adb, "", FLAUNCHER_PKG)
+    }
+
+    /**
+     * Whether FLauncher was first installed between 60 s before [at] (phone clock) and [OWN_INSTALL_WINDOW_MS] after.
+     * The TV prints local times, so its age is measured against the TV's own `date` and laid onto the phone's clock;
+     * time zones and clock differences between phone and TV cancel out.
+     */
+    private suspend fun installedDuring(adb: AdbClient, at: Long): Boolean {
+        val first = Parsers.firstInstallTime(read(adb, "app details", "dumpsys package $FLAUNCHER_PKG")) ?: return false
+        val tvNow = Parsers.parseTvTime(read(adb, "TV clock", "date '+%Y-%m-%d %H:%M:%S'")) ?: return false
+        val installedAt = now() - java.time.Duration.between(first, tvNow).toMillis()
+        return installedAt in (at - 60_000)..(at + OWN_INSTALL_WINDOW_MS)
+    }
+
     private suspend fun launchFlauncher(adb: AdbClient): Boolean {
-        adb.shell("monkey -p $FLAUNCHER_PKG -c android.intent.category.LAUNCHER 1")
-        if (poll(adb) { foreground(adb) == FLAUNCHER_PKG }) return true
-        adb.shell("am start -n $FLAUNCHER_PKG/.MainActivity")
-        return poll(adb) { foreground(adb) == FLAUNCHER_PKG }
+        sh(adb, "monkey -p $FLAUNCHER_PKG -c android.intent.category.LAUNCHER 1")
+        if (poll { foreground(adb) == FLAUNCHER_PKG }) return true
+        sh(adb, "am start -n $FLAUNCHER_PKG/.MainActivity")
+        return poll { foreground(adb) == FLAUNCHER_PKG }
     }
 
     // --- reads --------------------------------------------------------------------------------------------
 
     private suspend fun isFireTv(adb: AdbClient): Boolean {
-        val r = adb.shell("getprop ro.product.manufacturer")
+        val r = sh(adb, "getprop ro.product.manufacturer")
         if (r.exitCode != 0) throw TvReadException("device info", "exit code ${r.exitCode}")
         return r.output.trim().equals("Amazon", ignoreCase = true)
     }
 
-    /** Both what HOME resolves to and what is actually in front must be FLauncher. */
+    /** Both what HOME resolves to and what is actually in front must be FLauncher; an unreadable answer is "not yet". */
     private suspend fun homeIsFlauncher(adb: AdbClient) =
-        resolvedHome(adb) == FLAUNCHER_PKG && foreground(adb) == FLAUNCHER_PKG
+        try {
+            resolvedHome(adb) == FLAUNCHER_PKG && foreground(adb) == FLAUNCHER_PKG
+        } catch (e: TvReadException) {
+            false
+        }
 
-    private suspend fun resolvedHome(adb: AdbClient): String? {
-        val r = adb.shell(RESOLVE_HOME)
-        if (r.exitCode != 0) return null
-        return Parsers.resolveActivityBrief(r.output)?.substringBefore('/')
-    }
+    /** The package HOME resolves to (null if none, e.g. "No activity found"). A failed read throws. */
+    private suspend fun resolvedHome(adb: AdbClient): String? =
+        Parsers.resolveActivityBrief(read(adb, "current home screen", RESOLVE_HOME))?.substringBefore('/')
 
     private suspend fun homePackages(adb: AdbClient): List<String>? {
-        val r = adb.shell(QUERY_HOME)
+        val r = sh(adb, QUERY_HOME)
         if (r.exitCode != 0) return null
         return Parsers.queryActivitiesPackages(r.output).takeIf { it.isNotEmpty() }
     }
 
     private suspend fun foreground(adb: AdbClient): String? {
-        val r = adb.shell("dumpsys activity activities")
+        val r = sh(adb, "dumpsys activity activities")
         return if (r.exitCode == 0) Parsers.foregroundPackage(r.output) else null
     }
 
-    /** True if [pkg] shows up in `pm list packages [flag]` (flag "" = installed, "-e" = on, "-d" = off). */
+    /**
+     * True if [pkg] shows up in `pm list packages [flag]` (flag "" = installed, "-e" = on, "-d" = off). A failed read
+     * throws: it must never pass for "not installed" or "switched off".
+     */
     private suspend fun listed(adb: AdbClient, flag: String, pkg: String): Boolean {
-        val r = adb.shell(listOf("pm list packages", flag, pkg).filter { it.isNotEmpty() }.joinToString(" "))
-        return r.exitCode == 0 && pkg in Parsers.packageNames(r.output)
+        val cmd = listOf("pm list packages", flag, pkg).filter { it.isNotEmpty() }.joinToString(" ")
+        return pkg in Parsers.packageNames(read(adb, "app list", cmd, pmOutput = true))
+    }
+
+    /** Output of a read; a non-zero exit (or a package-manager error) throws [TvReadException]. */
+    private suspend fun read(adb: AdbClient, what: String, cmd: String, pmOutput: Boolean = false): String {
+        val r = sh(adb, cmd)
+        if (r.exitCode != 0) throw TvReadException(what, "exit code ${r.exitCode}")
+        if (pmOutput && Parsers.isPmError(r.output)) throw TvReadException(what, "TV reported an error")
+        return r.output
     }
 
     /** True if the TV still answers on the old connection; a probe that hangs counts as gone. */
@@ -346,21 +397,28 @@ class LauncherSwap(
      * Runs one TV read with a deadline. A blocking read on a wedged connection can't be cancelled, only ended by
      * closing the socket, so on timeout [adb] is closed and [AdbError.Timeout] thrown (callers then recover).
      */
-    private suspend fun <T> bounded(adb: AdbClient, block: suspend () -> T): T = coroutineScope {
-        val work = async { block() }
-        if (withTimeoutOrNull(CALL_TIMEOUT_MS) { work.join() } == null) {
-            runCatching { adb.close() }
-            work.cancel()
-            throw AdbError.Timeout()
+    private suspend fun <T> bounded(adb: AdbClient, timeoutMs: Long = CALL_TIMEOUT_MS, block: suspend () -> T): T =
+        coroutineScope {
+            val work = async { block() }
+            if (withTimeoutOrNull(timeoutMs) { work.join() } == null) {
+                runCatching { adb.close() }
+                work.cancel()
+                throw AdbError.Timeout()
+            }
+            work.await()
         }
-        work.await()
-    }
 
-    private suspend fun poll(adb: AdbClient, check: suspend () -> Boolean): Boolean {
+    /** Every TV command goes through here, so a wedged connection can never hang a step (or a rollback). */
+    private suspend fun sh(adb: AdbClient, cmd: String) = bounded(adb) { adb.shell(cmd) }
+
+    /** State-file reads/writes are several commands on the same connection; bounded as a whole. */
+    private suspend fun <T> onStore(adb: AdbClient, block: suspend () -> T): T = bounded(adb, STORE_TIMEOUT_MS, block)
+
+    private suspend fun poll(check: suspend () -> Boolean): Boolean {
         val start = timeSource.markNow()
         while (true) {
             delay(POLL_MS)
-            if (bounded(adb) { check() }) return true
+            if (check()) return true
             if (start.elapsedNow() >= VERIFY_TIMEOUT_MS.milliseconds) return false
         }
     }
@@ -412,6 +470,9 @@ class LauncherSwap(
         const val POLL_MS = 500L
         const val VERIFY_TIMEOUT_MS = 15_000L
         const val CALL_TIMEOUT_MS = 10_000L
+        const val STORE_TIMEOUT_MS = 30_000L
+        /** Our install happens right after its log entry is written; anything first installed later is not ours. */
+        const val OWN_INSTALL_WINDOW_MS = 10 * 60_000L
         const val DOWN_POLL_MS = 1_000L
         const val RECONNECT_POLL_MS = 5_000L
     }

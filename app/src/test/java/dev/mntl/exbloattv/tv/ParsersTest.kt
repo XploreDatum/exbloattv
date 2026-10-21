@@ -194,4 +194,17 @@ Display #0 (activities from top to bottom):
         assertThat(Parsers.foregroundPackage("topResumedActivity=null\n  mResumedActivity: ActivityRecord{2 u10 com.a.b/.X t1}"))
             .isEqualTo("com.a.b")
     }
+
+    @Test fun firstInstallTime() {
+        val dump = """
+            Packages:
+              Package [me.efesser.flauncher] (2b1c7a0):
+                userId=10091
+                firstInstallTime=2026-10-21 18:30:05
+                lastUpdateTime=2026-10-22 09:00:00
+        """.trimIndent()
+        assertThat(Parsers.firstInstallTime(dump)).isEqualTo(java.time.LocalDateTime.of(2026, 10, 21, 18, 30, 5))
+        assertThat(Parsers.firstInstallTime("Unable to find package: x")).isNull()
+        assertThat(Parsers.firstInstallTime("firstInstallTime=garbage")).isNull()
+    }
 }
