@@ -1,0 +1,11 @@
+package:com.mxtech.videoplayer.pro
+package:com.plexapp.android
+package:com.spotify.tv.android
+package:com.sonyliv
+package:me.efesser.flauncher
+package:in.startv.hotstar
+package:com.graymatrix.did
+package:org.videolan.vlc
+package:io.put.putio
+package:com.oumi.utility.media.hub
+package:com.apple.atve.androidtv.appletv

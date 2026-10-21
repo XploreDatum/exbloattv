@@ -1,0 +1,2 @@
+    mResumedActivity: ActivityRecord{cc36645 u0 me.efesser.flauncher/.MainActivity t1690}
+  ResumedActivity: ActivityRecord{cc36645 u0 me.efesser.flauncher/.MainActivity t1690}

@@ -1,0 +1,16 @@
+
+Exception occurred while executing:
+java.lang.IllegalArgumentException: Unknown package: com.example.doesnotexist
+	at com.android.server.pm.Settings.isOrphaned(Settings.java:4293)
+	at com.android.server.pm.PackageManagerService.isOrphaned(PackageManagerService.java:21283)
+	at com.android.server.pm.PackageManagerService.deletePackageVersioned(PackageManagerService.java:18070)
+	at com.android.server.pm.PackageInstallerService.uninstall(PackageInstallerService.java:742)
+	at com.android.server.pm.PackageManagerShellCommand.runUninstall(PackageManagerShellCommand.java:1486)
+	at com.android.server.pm.PackageManagerShellCommand.onCommand(PackageManagerShellCommand.java:193)
+	at android.os.ShellCommand.exec(ShellCommand.java:103)
+	at com.android.server.pm.PackageManagerService.onShellCommand(PackageManagerService.java:21518)
+	at android.os.Binder.shellCommand(Binder.java:634)
+	at android.os.Binder.onTransact(Binder.java:532)
+	at android.content.pm.IPackageManager$Stub.onTransact(IPackageManager.java:2821)
+	at com.android.server.pm.PackageManagerService.onTransact(PackageManagerService.java:3889)
+	at android.os.Binder.execTransact(Binder.java:731)
