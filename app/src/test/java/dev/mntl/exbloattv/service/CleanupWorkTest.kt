@@ -204,6 +204,49 @@ class CleanupWorkTest {
         appScope.cancel()
     }
 
+    private fun TestScope.undoOn(tv: FakeTv, onUndoneAll: suspend (String) -> Unit): CleanupWork {
+        val appScope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job())
+        return CleanupWork(
+            connector = object : AdbConnector {
+                override suspend fun connect(host: String, port: Int, authTimeoutMs: Long): AdbClient = tv.adb
+            },
+            phoneName = { "Pixel · ab12" },
+            swapFor = { store, phone -> LauncherSwap(ApkDownloader(OkHttpClient(), File("build/tmp-apk")), store, phone) },
+            appScope = appScope,
+            onUndoneAll = onUndoneAll,
+        )
+    }
+
+    private fun FakeTv.withOneSwitchedOff(pkg: String) {
+        installed += pkg
+        disabled += pkg
+        fs[TvStateStore.FILE] = """{"version":1,"serial":"S","changes":[{"id":"run-1:1:a","kind":"DISABLE","pkg":"$pkg",""" +
+            """"from":"enabled","to":"disabled","byPhone":"Pixel · ab12","at":1,"verified":true}]}"""
+    }
+
+    @Test fun anUndoThatEmptiesTheLogForgetsWhenTheTvWasCleaned() = runTest {
+        val tv = FakeTv().apply { withOneSwitchedOff("com.example.games") }
+        val undone = mutableListOf<String>()
+        val work = undoOn(tv) { undone += it }
+        assertTrue(work.startUndo(UndoRequest("S", "h", "Mi Box 4")))
+        advanceUntilIdle()
+        assertEquals(1, (work.state.value as WorkState.Undone).outcome.restored)
+        assertEquals(listOf("S"), undone)
+    }
+
+    @Test fun anUndoThatLeavesChangesOnRecordKeepsTheCleanedTime() = runTest {
+        val tv = FakeTv().apply {
+            withOneSwitchedOff("com.example.games")
+            failingEnables += "com.example.games"
+        }
+        val undone = mutableListOf<String>()
+        val work = undoOn(tv) { undone += it }
+        assertTrue(work.startUndo(UndoRequest("S", "h", "Mi Box 4")))
+        advanceUntilIdle()
+        assertTrue((work.state.value as WorkState.Undone).outcome.failed.isNotEmpty())
+        assertEquals(emptyList<String>(), undone)
+    }
+
     private class Journal : JobJournal {
         val events = mutableListOf<String>()
         override suspend fun started(job: ActiveJob) { events += "started ${job.kind} ${job.serial}" }

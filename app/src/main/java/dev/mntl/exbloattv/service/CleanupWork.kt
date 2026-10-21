@@ -110,6 +110,8 @@ class CleanupWork(
     private val swapFor: (TvStateStore, String) -> LauncherSwap,
     private val appScope: CoroutineScope,
     private val onCleaned: suspend (serial: String, at: Long) -> Unit = { _, _ -> },
+    /** After an Undo that left the TV's change log empty (everything put back). */
+    private val onUndoneAll: suspend (serial: String) -> Unit = {},
     /** Records the running job (so a run cut off by the app being killed can be shown later) and clears it. */
     private val journal: JobJournal = JobJournal.None,
     private val now: () -> Long = System::currentTimeMillis,
@@ -307,6 +309,16 @@ class CleanupWork(
             val phone = phoneName()
             adb = connector.connect(req.host)
             val report = Undo(TvStateStore(adb), phone).undoAll(adb, req.serial)
+            if (report.failed.isEmpty() && report.reinstallFromStore.isEmpty() && logIsEmpty(adb, req.serial)) {
+                // A note for the TV list only; a storage problem must never change the Undo result.
+                try {
+                    onUndoneAll(req.serial)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // ignored
+                }
+            }
             _state.value = WorkState.Undone(req.serial, req.tvName, report.toOutcome())
         } catch (e: CancellationException) {
             withContext(NonCancellable) { _state.value = WorkState.UndoFailed(req.serial, req.tvName, UndoProblem.UNEXPECTED) }
@@ -331,6 +343,15 @@ class CleanupWork(
         } finally {
             adb?.let { runCatching { it.close() } }
         }
+    }
+
+    /** Read back from the TV, not inferred: another phone may have logged something meanwhile. */
+    private suspend fun logIsEmpty(adb: AdbClient, serial: String): Boolean = try {
+        TvStateStore(adb).load(serial).changes.isEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        false
     }
 
     /** Opens a deleted app's Play Store page on the TV. Quick, so it runs here rather than in the service. */

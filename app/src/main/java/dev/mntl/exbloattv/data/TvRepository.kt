@@ -79,6 +79,9 @@ class TvRepository(
 
     suspend fun markCleaned(serial: String, at: Long) = update(serial) { it.copy(lastCleanedAt = at) }
 
+    /** Everything on record was undone: the TV is no longer "cleaned", so it says "Never cleaned" again. */
+    suspend fun markUndone(serial: String) = update(serial) { it.copy(lastCleanedAt = null) }
+
     suspend fun forget(serial: String) {
         store.edit { prefs ->
             prefs[TVS] = encode(decodeTvs(prefs[TVS]).filterNot { it.serial == serial })

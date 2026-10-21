@@ -62,6 +62,18 @@ class TvRepositoryTest {
         scope.cancel()
     }
 
+    @Test fun undoingEverythingForgetsWhenTheTvWasCleaned() = runTest {
+        val scope = CoroutineScope(coroutineContext + Job())
+        val r = repo(scope)
+        r.remember("S1", "Mi Box 4", "192.168.10.3")
+        r.remember("S2", "Living room", "192.168.10.4")
+        r.markCleaned("S1", 42L)
+        r.markCleaned("S2", 43L)
+        r.markUndone("S1")
+        assertEquals(listOf(null, 43L), r.tvs.first().sortedBy { it.serial }.map { it.lastCleanedAt })
+        scope.cancel()
+    }
+
     @Test fun phoneNameIsModelPlusAStableInstallId() = runTest {
         val scope = CoroutineScope(coroutineContext + Job())
         val r = repo(scope)

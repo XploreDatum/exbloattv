@@ -61,6 +61,7 @@ class AppGraph(app: Application) {
         swapFor = { store, phone -> LauncherSwap(downloader, store, phone) },
         appScope = scope,
         onCleaned = { serial, at -> repository.markCleaned(serial, at) },
+        onUndoneAll = { serial -> repository.markUndone(serial) },
         journal = object : JobJournal {
             override suspend fun started(job: ActiveJob) = repository.setActiveJob(job)
             override suspend fun ended() = repository.clearActiveJob()
