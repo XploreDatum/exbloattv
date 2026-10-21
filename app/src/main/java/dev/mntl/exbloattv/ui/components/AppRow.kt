@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.res.stringResource
+import dev.mntl.exbloattv.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -40,7 +42,7 @@ fun AppRow(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val spoken = "$name, keep, switch ${if (checked) "on" else "off"}"
+    val spoken = stringResource(if (checked) R.string.app_row_keep_on else R.string.app_row_keep_off, name)
     Row(
         modifier
             .fillMaxWidth()

@@ -43,4 +43,6 @@ data class Inventory(
     val storage: StorageStats?,
     val animations: AnimationScales,
     val backgroundOps: Map<String, String>,
+    /** Apps removed for the TV's user (`pm uninstall -k --user 0`): still on the TV, not in [packages]. */
+    val removedForUser: Set<String> = emptySet(),
 )
