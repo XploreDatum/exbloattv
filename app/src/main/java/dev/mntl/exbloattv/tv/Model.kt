@@ -38,8 +38,9 @@ data class Inventory(
     val launchable: Set<String>,
     val homePackages: List<String>,
     val resolvedHome: String?,
-    val memory: MemoryStats,
-    val storage: StorageStats,
+    /** null = the TV could not be read; show "—", never zero. */
+    val memory: MemoryStats?,
+    val storage: StorageStats?,
     val animations: AnimationScales,
     val backgroundOps: Map<String, String>,
 )

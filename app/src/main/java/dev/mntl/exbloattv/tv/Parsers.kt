@@ -75,7 +75,7 @@ object Parsers {
     }
 
     fun resumedPackage(text: String): String? =
-        Regex("""mResumedActivity:.*? u\d+ ([^/\s]+)/""").find(text)?.groupValues?.get(1)
+        Regex("""[rR]esumedActivity[:=]\s*ActivityRecord\{[^}]*? u\d+ ([^/\s]+)/""").find(text)?.groupValues?.get(1)
 
     fun appop(text: String, op: String): String? =
         Regex("""^\s*${Regex.escape(op)}:\s*(\w+)""", RegexOption.MULTILINE).find(text)?.groupValues?.get(1)

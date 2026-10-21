@@ -78,6 +78,21 @@ class ParsersTest {
         assertThat(Parsers.resumedPackage("nothing")).isNull()
     }
 
+    @Test fun resumedPackageHandlesAndroid10To14Forms() {
+        val rec = "ActivityRecord{1a2b3c4 u0 com.netflix.ninja/.MainActivity t42}"
+        val lines = listOf(
+            "  mResumedActivity: $rec",
+            "  ResumedActivity: $rec",
+            "  topResumedActivity=$rec",
+            "  mResumedActivity=$rec",
+            "  mTopResumedActivity=$rec",
+            "    mResumedActivity: ActivityRecord{1a2b3c4 u10 com.netflix.ninja/com.netflix.Main t42}",
+        )
+        for (l in lines) assertThat(Parsers.resumedPackage(l)).isEqualTo("com.netflix.ninja")
+        assertThat(Parsers.resumedPackage("  mLastPausedActivity: $rec")).isNull()
+        assertThat(Parsers.resumedPackage("  mResumedActivity: null")).isNull()
+    }
+
     @Test fun appop() {
         assertThat(Parsers.appop(fx("appops_netflix.txt"), "RUN_ANY_IN_BACKGROUND")).isEqualTo("ignore")
         assertThat(Parsers.appop(fx("appops_netflix.txt"), "CAMERA")).isNull()

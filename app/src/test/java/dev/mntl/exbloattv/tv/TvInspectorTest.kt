@@ -72,19 +72,72 @@ class TvInspectorTest {
         assertThat(inv.backgroundOps["me.efesser.flauncher"]).isEqualTo("ignore")
     }
 
-    @Test fun emptyPackageListIsAnErrorNotAnEmptyTv() {
-        val adb = fake()
-        adb.responses["pm list packages -f -i -U"] = ""
-        assertThrows(IllegalStateException::class.java) { read(adb) }
+    private fun failsWith(what: String, setup: FakeAdbClient.() -> Unit) {
+        val adb = fake().apply(setup)
+        val e = assertThrows(TvReadException::class.java) { read(adb) }
+        assertThat(e.what).isEqualTo(what)
     }
 
-    @Test fun unreadableMemoryOrStorageDoesNotFailInventory() {
+    @Test fun emptyOrFailedAppListThrows() {
+        failsWith("app list") { responses["pm list packages -f -i -U"] = "" }
+        failsWith("app list") { exitCodes["pm list packages -f -i -U"] = 1 }
+        failsWith("app list") { responses["pm list packages -f -i -U"] = "Exception occurred while executing:\n..." }
+    }
+
+    @Test fun emptyOrFailedSystemListThrows() {
+        failsWith("system app list") { responses["pm list packages -s"] = "" }
+        failsWith("system app list") { exitCodes["pm list packages -s"] = 255 }
+    }
+
+    @Test fun disabledListEmptyIsValidButFailureThrows() {
+        val adb = fake().apply { responses["pm list packages -d"] = "" }
+        assertThat(read(adb).packages.all { it.enabled }).isTrue()
+        failsWith("switched-off app list") { exitCodes["pm list packages -d"] = 1 }
+    }
+
+    @Test fun launchableQueryFailuresThrow() {
+        failsWith("launchable apps") { exitCodes[leanback] = 1 }
+        failsWith("launchable apps") { exitCodes[launcher] = 1 }
+        failsWith("launchable apps") { responses[leanback] = ""; responses[launcher] = "" }
+    }
+
+    @Test fun launchableUnionOfOneQueryIsEnough() {
+        val inv = read(fake().apply { responses[leanback] = "" })
+        assertThat(inv.launchable).contains("com.netflix.ninja")
+    }
+
+    @Test fun homeQueryFailureThrows() {
+        failsWith("home screen apps") { exitCodes[home] = 1 }
+    }
+
+    @Test fun unreadableMemoryOrStorageIsNullNotZero() {
         val adb = fake()
         adb.responses["dumpsys meminfo"] = "Can't find service: meminfo"
-        adb.responses["df /data"] = ""
+        adb.exitCodes["df /data"] = 1
         val inv = read(adb)
-        assertThat(inv.memory).isEqualTo(MemoryStats(0, 0, 0))
-        assertThat(inv.storage).isEqualTo(StorageStats(0, 0, 0))
+        assertThat(inv.memory).isNull()
+        assertThat(inv.storage).isNull()
+        assertThat(inv.packages).hasSize(96)
+    }
+
+    @Test fun connectionErrorsPropagateFromMemoryRead() {
+        val adb = fake()
+        adb.failNext("dumpsys meminfo", dev.mntl.exbloattv.adb.AdbError.Disconnected())
+        assertThrows(dev.mntl.exbloattv.adb.AdbError.Disconnected::class.java) { read(adb) }
+    }
+
+    @Test fun cancellationIsNotSwallowed() {
+        val adb = fake()
+        adb.failNext("df /data", kotlinx.coroutines.CancellationException("cancelled"))
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) { read(adb) }
+    }
+
+    @Test fun animationSettingNullMeansOneButGarbageThrows() {
+        // fake() already answers "null" for transition scale
+        assertThat(read(fake()).animations.transition).isEqualTo(1.0f)
+        failsWith("animation settings") { responses["settings get global window_animation_scale"] = "cmd: Can't find service: settings" }
+        failsWith("animation settings") { responses["settings get global animator_duration_scale"] = "" }
+        failsWith("animation settings") { exitCodes["settings get global window_animation_scale"] = 1 }
     }
 
     @Test fun inventoryRoundTripsThroughJson() {
