@@ -78,6 +78,9 @@ class DadbAdbClient(private val dadb: Dadb, override val host: String) : AdbClie
             throw AdbError.LocalFile(e.message ?: "invalid file")
         } catch (e: SecurityException) {
             throw AdbError.LocalFile(e.message ?: "no access")
+        } catch (e: IllegalStateException) {
+            // dadb/okio throw this ("closed") when the connection was closed under a call.
+            throw AdbError.Disconnected()
         } catch (e: AdbOperationFailedException) {
             throw AdbError.TransferFailed(e.message ?: "operation failed")
         } catch (e: IOException) {
