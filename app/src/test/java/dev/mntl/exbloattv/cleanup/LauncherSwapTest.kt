@@ -18,7 +18,10 @@ import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import org.junit.Rule
@@ -210,11 +213,40 @@ class LauncherSwapTest {
 
     @Test fun alreadySwappedIsAlreadyDone() = runTest {
         tv.installed += FLAUNCHER_PKG
-        tv.disabled += STOCK
+        tv.disabled += setOf(STOCK, SETUPWRAITH)
+        tv.foreground = FLAUNCHER_PKG
         val result = swapper().swap(tv.adb, serial)
         assertThat(result).isEqualTo(SwapResult.AlreadyDone)
-        assertThat(tv.adb.log).containsExactly("getprop ro.product.manufacturer", RESOLVE_HOME).inOrder()
+        assertThat(tvCommands()).containsExactly(
+            "getprop ro.product.manufacturer", RESOLVE_HOME, dumpsys, "pm list packages -e $SETUPWRAITH",
+        ).inOrder()
         assertThat(downloader.calls).isEmpty()
+    }
+
+    @Test fun alreadyDoneTrustsALoggedVerifiedSwapWithoutReadingTheForeground() = runTest {
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        tv.foreground = "com.netflix.ninja"
+        tv.adb.log.clear()
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.AlreadyDone)
+        assertThat(tvCommands()).doesNotContain(dumpsys)
+    }
+
+    @Test fun flauncherResolvedButSetupwraithStillOnIsFinishedNotAlreadyDone() = runTest {
+        tv.installed += FLAUNCHER_PKG
+        tv.disabled += STOCK
+        tv.foreground = FLAUNCHER_PKG
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH)
+        assertThat(changes().map { it.kind to it.pkg }).containsExactly(
+            ChangeKind.DISABLE to SETUPWRAITH, ChangeKind.LAUNCHER_SWAP to FLAUNCHER_PKG,
+        ).inOrder()
+    }
+
+    @Test fun flauncherResolvedButNotInFrontAndNothingLoggedIsNotAlreadyDone() = runTest {
+        tv.installed += FLAUNCHER_PKG
+        tv.disabled += setOf(STOCK, SETUPWRAITH)
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        assertThat(tvCommands()).contains("monkey -p $FLAUNCHER_PKG -c android.intent.category.LAUNCHER 1")
     }
 
     @Test fun installedButNotHomeSkipsDownloadAndInstall() = runTest {
@@ -266,6 +298,170 @@ class LauncherSwapTest {
         assertThat(tvCommands()).containsAtLeast("pm enable $SETUPWRAITH", "pm enable $STOCK", "pm uninstall $FLAUNCHER_PKG").inOrder()
         assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
         assertThat(changes()).isEmpty()
+    }
+
+    @Test fun preinstalledSwitchedOffFlauncherIsSwitchedOffAgainOnRollback() = runTest {
+        tv.installed += FLAUNCHER_PKG
+        tv.disabled += FLAUNCHER_PKG
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        assertThat(swapper().swap(tv.adb, serial)).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        assertThat(tv.disabled).containsExactly(FLAUNCHER_PKG)
+        assertThat(tvCommands()).containsAtLeast("pm enable $STOCK", "pm disable-user --user 0 $FLAUNCHER_PKG", home).inOrder()
+        assertThat(tvCommands().none { it.startsWith("pm uninstall") }).isTrue()
+        assertThat(changes()).isEmpty()
+    }
+
+    // --- best-effort, gated, strict rollback ----------------------------------------------------------------
+
+    @Test fun aFailingEnableDoesNotStopTheOthersAndKeepsFlauncher() = runTest {
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        tv.adb.failNext("pm enable $SETUPWRAITH", AdbError.Disconnected())
+        val result = swapper().swap(tv.adb, serial)
+        assertThat((result as SwapResult.RolledBack).reason).contains("Press Home")
+        assertThat(tvCommands()).contains("pm enable $STOCK")
+        assertThat(tvCommands().none { it.startsWith("pm uninstall") }).isTrue()
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        // What is still off (or unconfirmed) stays in the log for recover()/Undo; the swap itself is gone.
+        assertThat(changes().map { it.kind to it.pkg }).containsExactly(
+            ChangeKind.INSTALL_APK to FLAUNCHER_PKG, ChangeKind.DISABLE to SETUPWRAITH,
+        )
+    }
+
+    @Test fun anEnableThatDoesNotStickKeepsFlauncherAndReportsFailure() = runTest {
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        tv.failingEnables += STOCK
+        val result = swapper().swap(tv.adb, serial)
+        assertThat((result as SwapResult.RolledBack).reason).contains("Press Home")
+        assertThat(tvCommands().none { it.startsWith("pm uninstall") }).isTrue()
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+    }
+
+    @Test fun rollbackLandingOnFallbackHomeIsReportedAsFailure() = runTest {
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else TV_SETTINGS }
+        val result = swapper().swap(tv.adb, serial)
+        assertThat((result as SwapResult.RolledBack).reason).contains("Press Home")
+    }
+
+    @Test fun withNoStockLauncherFlauncherIsNotRemovedLeavingOnlyTheFallbackHome() = runTest {
+        tv.installed -= STOCK // nothing but FLauncher and the black-screen fallback home can take HOME
+        tv.onHome = { if (SETUPWRAITH in tv.disabled) "com.netflix.ninja" else tv.resolvedHome() }
+        val result = swapper().swap(tv.adb, serial)
+        assertThat((result as SwapResult.RolledBack).reason).contains("Press Home")
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        assertThat(tv.disabled).isEmpty()
+    }
+
+    @Test fun rollbackLandingOnSetupWizardIsReportedAsFailure() = runTest {
+        tv.onHome = { SETUPWRAITH }
+        val result = swapper().swap(tv.adb, serial)
+        assertThat((result as SwapResult.RolledBack).reason).contains("Press Home")
+    }
+
+    @Test fun cancellationDuringTheFailureRollbackStillCompletesIt() = runTest {
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        val job = launch { swapper().swap(tv.adb, serial) }
+        // Launch check ends at 0.5 s, HOME check gives up at 15.5 s, rollback's foreground check runs at 16 s.
+        advanceTimeBy(15_700)
+        assertThat(tvCommands()).contains("pm uninstall $FLAUNCHER_PKG")
+        job.cancel()
+        advanceUntilIdle()
+        assertThat(job.isCancelled).isTrue()
+        assertThat(tv.disabled).isEmpty()
+        assertThat(tv.foreground).isEqualTo(STOCK)
+        assertThat(changes()).isEmpty()
+    }
+
+    @Test fun cancellationMidSwapRollsBack() = runTest {
+        tv.onHome = { if (STOCK in tv.disabled) SETUPWRAITH else tv.resolvedHome() }
+        val job = launch { swapper().swap(tv.adb, serial) }
+        advanceTimeBy(5_000) // inside the HOME check, after both disables
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH)
+        job.cancel()
+        advanceUntilIdle()
+        assertThat(tv.disabled).isEmpty()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
+        assertThat(tv.foreground).isEqualTo(STOCK)
+        assertThat(changes()).isEmpty()
+    }
+
+    // --- interrupted swaps: dead connection, then recover() on a fresh one -----------------------------------
+
+    /** Passes calls to the TV until [trigger] runs; the TV carries it out, the reply is lost, and every later call fails. */
+    private class DropsAfter(private val tv: FakeAdbClient, private val trigger: String) : AdbClient {
+        private var dead = false
+        override val host = "tv"
+        private suspend fun <T> pass(cmd: String, block: suspend () -> T): T {
+            if (dead) throw AdbError.Disconnected()
+            val r = block()
+            if (cmd == trigger) {
+                dead = true
+                throw AdbError.Disconnected()
+            }
+            return r
+        }
+        override suspend fun shell(cmd: String) = pass(cmd) { tv.shell(cmd) }
+        override suspend fun install(apk: File) = pass("install") { tv.install(apk) }
+        override suspend fun push(local: File, remote: String) = pass("push") { tv.push(local, remote) }
+        override suspend fun pull(remote: String, local: File) = pass("pull") { tv.pull(remote, local) }
+        override suspend fun reboot() = pass("reboot") { tv.reboot() }
+        override fun close() { dead = true }
+    }
+
+    private suspend fun TestScope.dropDuringSwap(trigger: String) {
+        val dying = DropsAfter(tv.adb, trigger)
+        thrown<AdbError.Disconnected> {
+            swapper(TvStateStore(dying) { testScheduler.currentTime }).swap(dying, serial)
+        }
+    }
+
+    @Test fun lostDisableReplyIsRecoveredOnAFreshConnection() = runTest {
+        dropDuringSwap("pm disable-user --user 0 $SETUPWRAITH")
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH) // the TV did it; we never heard back
+        val log = changes()
+        assertThat(log.single { it.pkg == SETUPWRAITH }.verified).isFalse() // written before the command
+
+        val result = swapper().recover(tv.adb, serial)
+
+        assertThat((result as SwapResult.RolledBack).reason).contains("old home screen is back")
+        assertThat(tv.disabled).isEmpty()
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
+        assertThat(tv.foreground).isEqualTo(STOCK)
+        assertThat(changes()).isEmpty()
+    }
+
+    @Test fun lostInstallReplyIsRecoveredOnAFreshConnection() = runTest {
+        dropDuringSwap("install")
+        assertThat(tv.installed).contains(FLAUNCHER_PKG)
+        assertThat(changes().single().let { it.kind to it.verified }).isEqualTo(ChangeKind.INSTALL_APK to false)
+
+        assertThat(swapper().recover(tv.adb, serial)).isInstanceOf(SwapResult.RolledBack::class.java)
+        assertThat(tv.installed).doesNotContain(FLAUNCHER_PKG)
+        assertThat(changes()).isEmpty()
+    }
+
+    @Test fun nextSwapUndoesAnInterruptedOneBeforeStartingAgain() = runTest {
+        dropDuringSwap("pm disable-user --user 0 $SETUPWRAITH")
+        tv.adb.log.clear()
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        val cmds = tvCommands()
+        assertThat(cmds.indexOf("pm enable $STOCK")).isLessThan(cmds.indexOf("pm disable-user --user 0 $STOCK"))
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH)
+        assertThat(changes().map { it.kind }).containsExactly(
+            ChangeKind.INSTALL_APK, ChangeKind.DISABLE, ChangeKind.DISABLE, ChangeKind.LAUNCHER_SWAP,
+        ).inOrder()
+        assertThat(changes().all { it.verified }).isTrue()
+    }
+
+    @Test fun recoverWithNothingLoggedDoesNothing() = runTest {
+        assertThat(swapper().recover(tv.adb, serial)).isNull()
+        assertThat(tvCommands()).isEmpty()
+    }
+
+    @Test fun recoverKeepsACompletedSwapThatStillWorks() = runTest {
+        assertThat(swapper().swap(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        assertThat(swapper().recover(tv.adb, serial)).isEqualTo(SwapResult.Swapped)
+        assertThat(tv.disabled).containsExactly(STOCK, SETUPWRAITH)
     }
 
     // --- verifyAfterReboot --------------------------------------------------------------------------------
@@ -348,6 +544,27 @@ class LauncherSwapTest {
             swapper().rebootAndReconnect(old, { reconnects++; old }, timeoutMs = 60_000)
         }
         assertThat(reconnects).isEqualTo(0)
+    }
+
+    @Test fun reconnectedClientThatHangsIsClosedAndRetried() = runTest {
+        val old = FakeAdbClient()
+        old.onCommand = { throw AdbError.Disconnected() }
+        val hung = HungClient()
+        val ready = FakeAdbClient(mutableMapOf("getprop sys.boot_completed" to "1\n"))
+        val script = ArrayDeque<AdbClient>(listOf(hung, ready))
+        assertThat(swapper().rebootAndReconnect(old, { script.removeFirst() })).isSameInstanceAs(ready)
+        assertThat(hung.closed).isTrue()
+    }
+
+    private class HungClient : AdbClient {
+        var closed = false
+        override val host = "hung"
+        override suspend fun shell(cmd: String): ShellResult = awaitCancellation()
+        override suspend fun install(apk: File) = error("unused")
+        override suspend fun push(local: File, remote: String) = error("unused")
+        override suspend fun pull(remote: String, local: File) = error("unused")
+        override suspend fun reboot() {}
+        override fun close() { closed = true }
     }
 
     @Test fun hungProbeAfterRebootCountsAsDisconnected() = runTest {

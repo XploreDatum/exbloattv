@@ -21,6 +21,8 @@ class FakeTv(val adb: FakeAdbClient = FakeAdbClient()) {
     var installWorks = true
     /** Packages whose `pm disable-user` prints success but changes nothing. */
     val stubbornPackages = mutableSetOf<String>()
+    /** Packages whose `pm enable` prints success but changes nothing. */
+    val failingEnables = mutableSetOf<String>()
     /** What pressing HOME brings to the front; by default whatever HOME resolves to. */
     var onHome: () -> String? = { resolvedHome() }
     /** The TV's state file system (path -> content). */
@@ -106,7 +108,7 @@ class FakeTv(val adb: FakeAdbClient = FakeAdbClient()) {
         }
         Regex("""^pm enable (\S+)$""").matchEntire(cmd)?.let { m ->
             val p = m.groupValues[1]
-            disabled -= p
+            if (p !in failingEnables) disabled -= p
             out[cmd] = "Package $p new state: enabled\n"
             return 0
         }

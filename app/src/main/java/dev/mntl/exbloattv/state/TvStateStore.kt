@@ -63,6 +63,14 @@ class TvStateStore(
         saveLocked(state.copy(changes = state.changes + change))
     }
 
+    /** Replaces the change with the same id in place (e.g. to mark it verified), or appends it if there is none. */
+    suspend fun upsertChange(serial: String, change: Change) = mutex.withLock {
+        val state = loadLocked(serial)
+        val i = state.changes.indexOfFirst { it.id == change.id }
+        val changes = if (i < 0) state.changes + change else state.changes.toMutableList().also { it[i] = change }
+        saveLocked(state.copy(changes = changes))
+    }
+
     /** Drops the changes with these ids (e.g. a rolled-back step), keeping everything else; writes only if one matched. */
     suspend fun removeChanges(serial: String, ids: Set<String>) = mutex.withLock {
         val state = loadLocked(serial)

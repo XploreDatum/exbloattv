@@ -148,6 +148,15 @@ class TvStateStoreTest {
         assertEquals("Pixel 8", s.lock?.byPhone)
     }
 
+    @Test fun upsertChangeReplacesInPlaceOrAppends() {
+        listOf("1", "2").forEach { r { store.appendChange(serial, change(it)) } }
+        r { store.upsertChange(serial, change("1").copy(verified = false)) }
+        r { store.upsertChange(serial, change("3")) }
+        val changes = r { store.load(serial) }.changes
+        assertEquals(listOf("1", "2", "3"), changes.map { it.id })
+        assertEquals(listOf(false, true, true), changes.map { it.verified })
+    }
+
     @Test fun removeChangesWithNothingToRemoveWritesNothing() {
         r { store.appendChange(serial, change("1")) }
         fake.log.clear()
