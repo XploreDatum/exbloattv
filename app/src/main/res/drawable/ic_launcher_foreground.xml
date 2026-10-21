@@ -1,25 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Rounded TV outline -->
+    <!-- Solid TV with a check cut out of the screen. One silhouette, so it
+         doubles as the monochrome layer. Bounds x=25..83, y=32..81. -->
     <path
-        android:fillColor="#00000000"
-        android:strokeColor="#386A20"
-        android:strokeWidth="5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M34,36h40a6,6 0 0 1 6,6v24a6,6 0 0 1 -6,6h-40a6,6 0 0 1 -6,-6v-24a6,6 0 0 1 6,-6z" />
-    <!-- Stand -->
-    <path
-        android:fillColor="#00000000"
-        android:strokeColor="#386A20"
-        android:strokeWidth="5"
-        android:strokeLineCap="round"
-        android:pathData="M44,80h20" />
-    <!-- Sparkle -->
-    <path
-        android:fillColor="#386A20"
-        android:pathData="M54,43l2.6,6.4l6.4,2.6l-6.4,2.6l-2.6,6.4l-2.6,-6.4l-6.4,-2.6l6.4,-2.6z" />
+        android:fillColor="#E6F6D6"
+        android:fillType="evenOdd"
+        android:pathData="M34,32H74C78.971,32 83,36.029 83,41V61C83,65.971 78.971,70 74,70H60V75H65C66.657,75 68,76.343 68,78C68,79.657 66.657,81 65,81H43C41.343,81 40,79.657 40,78C40,76.343 41.343,75 43,75H48V70H34C29.029,70 25,65.971 25,61V41C25,36.029 29.029,32 34,32Z M36,50L39,47Q40,46 41,47L49,55L67,41Q68,40 69,41L72,45Q73,46 72,47L51,64Q49,66 47,64L36,53Q34.5,51.5 36,50Z" />
 </vector>
