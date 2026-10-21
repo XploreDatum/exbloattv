@@ -29,7 +29,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       # No signing keys are needed: without exbloat.* entries in local.properties the
       # release variant stays unsigned, and debug builds and tests never use them.
