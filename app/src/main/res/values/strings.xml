@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ExBloat TV</string>
+
+    <!-- Common -->
+    <string name="back">Back</string>
+    <string name="try_again">Try again</string>
+    <string name="dash">—</string>
+    <string name="row_with_state">%1$s, %2$s</string>
+
+    <!-- App row (TalkBack) -->
+    <string name="app_row_keep_on">%1$s, keep, switch on</string>
+    <string name="app_row_keep_off">%1$s, keep, switch off</string>
+
+    <!-- Notifications -->
     <string name="notif_channel_work">Cleaning up</string>
     <string name="notif_channel_result">Results</string>
     <string name="notif_cleaning_title">Cleaning up %1$s…</string>
@@ -15,4 +27,315 @@
     <string name="notif_undone_title">Undo finished on %1$s</string>
     <string name="notif_undo_failed_title">Couldn\'t undo everything on %1$s</string>
     <string name="notif_open_app">Open the app for details.</string>
+
+    <!-- Home -->
+    <string name="home_title">Your TVs</string>
+    <string name="home_subtitle">Tap a TV to clean it up again or undo.</string>
+    <string name="home_add_tv">Add a TV</string>
+    <string name="home_last_cleaned">Cleaned %1$s</string>
+    <string name="home_never_cleaned">Not cleaned yet</string>
+    <string name="home_status_ready">On Wi-Fi</string>
+    <string name="home_status_away">Not found</string>
+    <string name="home_status_checking">Checking…</string>
+    <string name="home_tv_cd">%1$s, %2$s, %3$s, %4$s</string>
+    <string name="home_busy_cleaning">Cleaning up %1$s…</string>
+    <string name="home_busy_undoing">Undoing changes on %1$s…</string>
+    <string name="home_result_ready">Finished working on %1$s</string>
+    <string name="home_see">See</string>
+
+    <!-- Find -->
+    <string name="find_title">Find your TV</string>
+    <string name="find_subtitle">Keep your phone on the same Wi-Fi as the TV.</string>
+    <string name="find_scanning">Looking for TVs…</string>
+    <string name="find_ready">Ready</string>
+    <string name="find_setup">Setup</string>
+    <string name="find_unnamed">Android TV</string>
+    <string name="find_moved">%1$s · new address</string>
+    <string name="find_tv_cd">%1$s, %2$s, %3$s</string>
+    <string name="find_continue">Continue</string>
+    <string name="find_enter_ip">Enter IP address</string>
+    <string name="find_scan_again">Look again</string>
+    <string name="find_nothing_title">No TVs found</string>
+    <string name="find_nothing_body">Make sure the TV is on and on the same Wi-Fi as this phone. Guest networks and some routers keep devices apart, so the phone can\'t see the TV. Try your main Wi-Fi, or type the TV\'s address.</string>
+    <string name="find_no_wifi_title">Connect to Wi-Fi</string>
+    <string name="find_no_wifi_body">Your phone needs to be on the same Wi-Fi as the TV. Mobile data can\'t reach it.</string>
+    <string name="find_open_wifi">Open Wi-Fi settings</string>
+    <string name="find_check_again">I\'m on Wi-Fi now</string>
+    <string name="ip_dialog_title">TV address</string>
+    <string name="ip_dialog_body">On the TV, open Settings, then Network &amp; Internet, and look for the IP address, like 192.168.1.20.</string>
+    <string name="ip_dialog_label">IP address</string>
+    <string name="ip_dialog_error">That doesn\'t look right. It should be four numbers with dots, like 192.168.1.20.</string>
+    <string name="ip_dialog_connect">Connect</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Turn on debugging -->
+    <string name="debug_title">Turn on debugging</string>
+    <string name="debug_subtitle">Grab the TV remote. This is a one-time setup.</string>
+    <string name="debug_brand_label">Your TV</string>
+    <string name="debug_brand_cd">TV brand: %1$s. Tap to change.</string>
+    <string name="debug_brand_pick">Which TV do you have?</string>
+    <string name="debug_waiting">Waiting for your TV…</string>
+    <string name="debug_pictures">Show me with pictures</string>
+    <string name="debug_step_cd">Step %1$d: %2$s</string>
+    <string name="debug_network_tip"><![CDATA[See <b>Network debugging</b> as well? Turn that on too.]]></string>
+    <string name="debug_pairing_tip"><![CDATA[Only see <b>Wireless debugging</b> with a pairing code? This app can\'t use that yet. Look for <b>USB debugging</b> instead.]]></string>
+    <string name="debug_fire_tip">On Fire TV the home screen stays as it is. Everything else works.</string>
+
+    <string name="brand_android_tv">Android TV</string>
+    <string name="brand_google_tv">Google TV</string>
+    <string name="brand_xiaomi">Xiaomi Mi Box / Mi TV</string>
+    <string name="brand_tcl">TCL</string>
+    <string name="brand_sony">Sony</string>
+    <string name="brand_hisense">Hisense</string>
+    <string name="brand_philips">Philips</string>
+    <string name="brand_fire_tv">Fire TV</string>
+
+    <string name="step_atv_1"><![CDATA[Open <b>Settings → Device Preferences → About</b>]]></string>
+    <string name="step_atv_2"><![CDATA[Press OK on <b>Build</b> 7 times]]></string>
+    <string name="step_atv_3"><![CDATA[Go back to <b>Developer options</b> and turn on <b>USB debugging</b>]]></string>
+    <string name="step_gtv_1"><![CDATA[Open <b>Settings → System → About</b>]]></string>
+    <string name="step_gtv_2"><![CDATA[Press OK on <b>Android TV OS build</b> 7 times]]></string>
+    <string name="step_gtv_3"><![CDATA[Go back to <b>System → Developer options</b> and turn on <b>USB debugging</b>]]></string>
+    <string name="step_mi_3"><![CDATA[Go back to <b>Device Preferences → Developer options</b> and turn on <b>USB debugging</b>]]></string>
+    <string name="step_newer_1"><![CDATA[Open <b>Settings → System → About</b> (older TVs: <b>Settings → Device Preferences → About</b>)]]></string>
+    <string name="step_newer_2"><![CDATA[Press OK on <b>Android TV OS build</b> (older TVs: <b>Build</b>) 7 times]]></string>
+    <string name="step_philips_1"><![CDATA[Open <b>Settings → All settings → Android settings → Device Preferences → About</b>]]></string>
+    <string name="step_fire_1"><![CDATA[Open <b>Settings → My Fire TV → About</b>]]></string>
+    <string name="step_fire_2"><![CDATA[Press OK on your device\'s name (like <b>Fire TV Stick</b>) 7 times]]></string>
+    <string name="step_fire_3"><![CDATA[Go back to <b>My Fire TV → Developer options</b> and turn on the <b>debugging</b> switch]]></string>
+
+    <string name="pictures_title">Step by step</string>
+    <string name="pictures_step">Step %1$d of %2$d</string>
+    <string name="pictures_next">Next</string>
+    <string name="pictures_previous">Previous</string>
+    <string name="pictures_close">Close</string>
+    <string name="pictures_press_ok">Press OK %1$d times</string>
+    <string name="pictures_turn_on">Turn it on</string>
+    <string name="pictures_cd">Picture of the TV screen: %1$s</string>
+    <string name="pic_settings">Settings</string>
+    <string name="pic_device_prefs">Device Preferences</string>
+    <string name="pic_system">System</string>
+    <string name="pic_network">Network &amp; Internet</string>
+    <string name="pic_apps">Apps</string>
+    <string name="pic_about">About</string>
+    <string name="pic_build">Build</string>
+    <string name="pic_tv_os_build">Android TV OS build</string>
+    <string name="pic_model">Model</string>
+    <string name="pic_version">Version</string>
+    <string name="pic_usb_debugging">USB debugging</string>
+    <string name="pic_stay_awake">Stay awake</string>
+    <string name="pic_all_settings">All settings</string>
+    <string name="pic_android_settings">Android settings</string>
+    <string name="pic_my_fire_tv">My Fire TV</string>
+    <string name="pic_fire_stick">Fire TV Stick</string>
+    <string name="pic_debugging">Debugging</string>
+
+    <!-- Approve on the TV -->
+    <string name="approve_title">Allow on the TV</string>
+    <string name="approve_subtitle">Look at the TV and press OK on “Allow USB debugging?”. Tick “Always allow” first.</string>
+    <string name="approve_waiting">Waiting for you to press OK on the TV…</string>
+    <string name="approve_two_phones">Each phone has to be allowed once, even if another phone in your home was allowed before.</string>
+    <string name="approve_reading_title">Reading your TV</string>
+    <string name="approve_reading">Looking at every app on the TV. This takes a few seconds.</string>
+    <string name="approve_timeout_title">The TV didn\'t answer</string>
+    <string name="approve_timeout_body">Nobody pressed OK on the TV in time, or the message closed. Make sure the TV is on, then try again.</string>
+    <string name="approve_unreachable_body">Can\'t reach the TV. Make sure it\'s on and on the same Wi-Fi.</string>
+    <string name="approve_read_failed_title">Couldn\'t read the TV</string>
+    <string name="approve_read_failed_body">The TV allowed this phone, but didn\'t answer every question. Try again.</string>
+    <string name="approve_show_steps">Show the setup steps</string>
+
+    <!-- Keep what you watch -->
+    <string name="keep_title">Keep what you watch</string>
+    <string name="keep_subtitle">The rest gets switched off. Undo any time.</string>
+    <string name="keep_loading">Reading your TV…</string>
+    <string name="keep_failed_title">Couldn\'t read the TV</string>
+    <string name="keep_failed_body">Make sure it\'s on and on the same Wi-Fi, then try again.</string>
+    <string name="keep_find_again">Find the TV again</string>
+    <string name="cat_streaming">Streaming video</string>
+    <string name="cat_music">Music &amp; audio</string>
+    <string name="cat_live_tv">Live TV &amp; sports</string>
+    <string name="cat_features">Features</string>
+    <string name="cat_google">Google extras</string>
+    <string name="cat_manufacturer">Manufacturer extras</string>
+    <string name="cat_sideload">Store &amp; sideload tools</string>
+    <string name="cat_other">Other</string>
+    <string name="cat_ads">Ads &amp; tracking</string>
+    <string name="keep_other_hint">Apps you installed that this app doesn\'t know yet.</string>
+    <string name="keep_locked">Always kept</string>
+    <string name="keep_always_off">Always switched off (%1$d)</string>
+    <string name="keep_always_off_body">These show ads or track what you watch, so they\'re always switched off.</string>
+    <string name="keep_expanded">expanded</string>
+    <string name="keep_collapsed">collapsed</string>
+    <string name="keep_show_system">Show system apps</string>
+    <string name="keep_hide_system">Hide system apps</string>
+    <string name="keep_system_body">The TV needs these to work, so they\'re never changed.</string>
+    <string name="keep_details">Details</string>
+    <string name="keep_speed_label">Make it faster</string>
+    <string name="speed_animations">Faster animations</string>
+    <string name="speed_animations_desc">Menus and screens open quicker</string>
+    <string name="speed_background">Stop video apps running in the background</string>
+    <string name="speed_background_desc">Frees memory. Music apps keep playing.</string>
+    <string name="speed_caches">Clear app caches</string>
+    <string name="speed_caches_desc">Removes temporary files</string>
+    <string name="speed_home">New home screen (FLauncher)</string>
+    <string name="speed_home_desc">A simple home screen without ads</string>
+    <string name="speed_home_fire">Not available on Fire TV yet</string>
+    <string name="setting_cd">%1$s, switch %2$s</string>
+    <string name="switch_on">on</string>
+    <string name="switch_off">off</string>
+    <string name="keep_go">Clean up TV</string>
+    <string name="keep_busy">Something is already running on a TV. Wait for it to finish.</string>
+
+    <!-- Review -->
+    <string name="review_title">Ready to clean up</string>
+    <plurals name="review_switch_off">
+        <item quantity="one">%d app will be switched off.</item>
+        <item quantity="other">%d apps will be switched off.</item>
+    </plurals>
+    <plurals name="review_remove">
+        <item quantity="one">%1$d app will be removed (removing deletes its data): %2$s.</item>
+        <item quantity="other">%1$d apps will be removed (removing deletes their data): %2$s.</item>
+    </plurals>
+    <plurals name="review_switch_on">
+        <item quantity="one">%d app will be switched back on.</item>
+        <item quantity="other">%d apps will be switched back on.</item>
+    </plurals>
+    <string name="review_home">The home screen will change to FLauncher.</string>
+    <string name="review_restart">The TV will restart once at the end.</string>
+    <string name="review_leave_remote">Leave the remote alone for a couple of minutes.</string>
+    <string name="review_delete_switch">Also delete switched-off apps I installed</string>
+    <string name="review_delete_desc">Frees storage, but deletes their data. You can get them back from the Play Store.</string>
+    <string name="review_nothing">Your TV already matches your choices. Nothing to change.</string>
+    <string name="review_go">Clean up TV</string>
+
+    <!-- Cleaning up -->
+    <string name="cleaning_title">Cleaning up</string>
+    <string name="cleaning_subtitle">Leave the remote alone for a minute.</string>
+    <string name="cleaning_lock_ok">You can lock your phone. The cleanup carries on.</string>
+    <string name="cleaning_progress_cd">Cleanup %1$d percent done</string>
+    <string name="cleaning_starting">Starting…</string>
+    <string name="cleaning_settle">Letting the TV settle after the restart… %1$d s</string>
+    <string name="cleaning_measuring">Measuring how much was freed…</string>
+    <string name="cleaning_cant_reach">Can\'t reach the TV. Make sure it\'s on and on the same Wi-Fi.</string>
+    <string name="cleaning_retry">Retry</string>
+    <string name="cleaning_skip">Skip</string>
+    <string name="cleaning_retry_cd">Retry: %1$s</string>
+    <string name="cleaning_skip_cd">Skip: %1$s</string>
+    <string name="cleaning_finish_anyway">Finish anyway</string>
+    <string name="cleaning_finish_anyway_desc">Skips what didn\'t work and finishes the rest.</string>
+    <string name="cleaning_restore_first">Nothing changes on the TV until the restore point is saved. Tap Retry.</string>
+    <string name="cleaning_check_again">Check the TV again</string>
+    <string name="cleaning_check_again_desc">Stops this cleanup, reads the TV again and takes you back to your choices.</string>
+    <string name="cleaning_stopped_title">Cleanup stopped</string>
+    <string name="cleaning_stopped_body">The cleanup stopped before the end. Everything it changed is recorded on the TV, so you can run it again or undo it from your TV\'s page.</string>
+    <string name="cleaning_back_home">Back to my TVs</string>
+    <string name="cleaning_not_running">No cleanup is running.</string>
+    <string name="group_restore">Save a restore point</string>
+    <string name="group_disable">Switch off apps</string>
+    <string name="group_uninstall">Delete apps you installed</string>
+    <string name="group_switch_on">Switch apps back on</string>
+    <string name="group_background">Stop video apps running in the background</string>
+    <string name="group_animations">Make menus and screens snappier</string>
+    <string name="group_animations_sub">0.5×</string>
+    <string name="group_caches">Clear temporary files</string>
+    <string name="group_swap">Set up the new home screen</string>
+    <string name="group_swap_sub">FLauncher</string>
+    <string name="group_reboot">Restart and check everything still works</string>
+    <string name="group_apps_count">%1$d of %2$d apps</string>
+    <string name="step_disable">Switch off %1$s</string>
+    <string name="step_enable">Switch on %1$s</string>
+    <string name="step_install_existing">Bring back %1$s</string>
+    <string name="step_uninstall">Delete %1$s</string>
+    <string name="step_background">Stop %1$s running in the background</string>
+    <string name="status_done">done</string>
+    <string name="status_running">in progress</string>
+    <string name="status_failed">needs attention</string>
+    <string name="status_pending">waiting</string>
+    <string name="status_skipped">skipped</string>
+
+    <!-- All clean -->
+    <string name="done_title">All clean</string>
+    <string name="done_title_partial">Cleaned up, with a few skips</string>
+    <string name="done_subtitle">Your TV should feel noticeably faster.</string>
+    <string name="done_subtitle_partial">Some steps were skipped. You can run the cleanup again from your TV\'s page.</string>
+    <string name="done_memory">Memory freed</string>
+    <string name="done_storage">Storage freed</string>
+    <string name="done_switched_off">Switched off</string>
+    <string name="done_home">Home screen</string>
+    <plurals name="done_apps">
+        <item quantity="one">%d app</item>
+        <item quantity="other">%d apps</item>
+    </plurals>
+    <string name="done_home_flauncher">FLauncher</string>
+    <string name="done_home_unchanged">Unchanged</string>
+    <string name="done_details">How these were measured</string>
+    <string name="done_details_memory">Memory used by apps: %1$s before, %2$s after (measured a minute after the restart).</string>
+    <string name="done_details_storage">Storage used: %1$s before, %2$s after.</string>
+    <string name="done_details_unknown">A dash means the TV didn\'t answer in time, so it couldn\'t be measured.</string>
+    <string name="done_details_count">Only changes the TV confirmed are counted.</string>
+    <string name="done_deleted_title">Deleted apps</string>
+    <string name="done_deleted_body">To get these back, use the Play Store on the TV: %1$s</string>
+    <string name="done_skipped">Skipped: %1$s</string>
+    <string name="done_done">Done</string>
+    <string name="done_undo">Undo everything</string>
+    <string name="done_missing">This cleanup has finished.</string>
+    <string name="list_separator">, </string>
+
+    <!-- Undo -->
+    <string name="undo_confirm_title">Undo everything?</string>
+    <string name="undo_confirm_body">This puts the TV back the way it was before this app changed it: apps switched back on, animations and the old home screen restored. Apps that were deleted can only come back from the Play Store.</string>
+    <string name="undo_confirm_go">Undo everything</string>
+    <string name="undo_confirm_cancel">Keep my changes</string>
+
+    <!-- TV details -->
+    <string name="tv_at">At %1$s</string>
+    <string name="tv_clean_again">Clean up again</string>
+    <string name="tv_undo">Undo everything</string>
+    <string name="tv_undoing_title">Undoing changes…</string>
+    <string name="tv_undoing_body">Leave the remote alone. If the TV asks “Allow USB debugging?”, press OK.</string>
+    <string name="tv_undone_title">Undo finished</string>
+    <plurals name="tv_undone_restored">
+        <item quantity="one">%d change put back.</item>
+        <item quantity="other">%d changes put back.</item>
+    </plurals>
+    <string name="tv_undone_nothing">There was nothing to undo.</string>
+    <string name="tv_undone_failed_title">Couldn\'t put these back</string>
+    <string name="tv_undone_failed_body">They stay on the list, so Undo everything tries them again next time.</string>
+    <string name="tv_undo_interrupted">The connection dropped before Undo finished. What\'s left stays on the list. Tap Try again.</string>
+    <string name="tv_reinstall_title">Deleted apps</string>
+    <string name="tv_reinstall_body">These were deleted, so only the Play Store can bring them back.</string>
+    <string name="tv_open_store">Open in Play Store on the TV</string>
+    <string name="tv_open_store_cd">Open %1$s in the Play Store on the TV</string>
+    <string name="tv_store_opened">The Play Store is open on the TV. Press Install with the remote.</string>
+    <string name="tv_store_failed">Couldn\'t open the Play Store on the TV. Make sure it\'s on, then try again.</string>
+    <string name="home_screen_name">Home screen</string>
+    <string name="undo_problem_locked">Another phone (%1$s) is changing this TV right now. Try again when it\'s done.</string>
+    <string name="undo_problem_not_allowed">The TV didn\'t allow this phone. Press OK on “Allow USB debugging?” on the TV, then try again.</string>
+    <string name="undo_problem_unreachable">Can\'t reach the TV. Make sure it\'s on and on the same Wi-Fi.</string>
+    <string name="undo_problem_unexpected">Something went wrong while undoing. What\'s left stays on the list, so try again.</string>
+    <string name="tv_log_title">What was changed</string>
+    <string name="tv_log_loading">Reading the list of changes from the TV…</string>
+    <string name="tv_log_unreachable">Can\'t reach the TV right now, so the list of changes can\'t be shown.</string>
+    <string name="tv_log_empty">Nothing changed by this app is on record.</string>
+    <plurals name="tv_log_count">
+        <item quantity="one">%d change on record</item>
+        <item quantity="other">%d changes on record</item>
+    </plurals>
+    <string name="tv_log_show">Show details</string>
+    <string name="tv_log_hide">Hide details</string>
+    <string name="tv_locked_now">Another phone (%1$s) is working on this TV right now.</string>
+    <string name="tv_refresh">Refresh</string>
+    <string name="tv_not_found">This TV isn\'t on this phone any more.</string>
+    <string name="log_disable">Switched off %1$s</string>
+    <string name="log_enable">Switched on %1$s</string>
+    <string name="log_remove_for_user">Removed %1$s</string>
+    <string name="log_install_existing">Brought back %1$s</string>
+    <string name="log_uninstall">Deleted %1$s</string>
+    <string name="log_animations">Faster animations</string>
+    <string name="log_appops">Stopped %1$s running in the background</string>
+    <string name="log_install_apk">Installed %1$s</string>
+    <string name="log_launcher_swap">New home screen</string>
+    <string name="log_by">By %1$s, %2$s</string>
+    <string name="log_unconfirmed">Not confirmed by the TV</string>
+    <string name="log_tech" translatable="false">%1$s · %2$s · %3$s → %4$s · %5$s</string>
 </resources>
