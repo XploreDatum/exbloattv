@@ -10,14 +10,17 @@ val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-val releaseStoreFile = localProps.getProperty("exbloat.storeFile")
+// Release signing comes from local.properties (exbloat.*) or, on CI, from EXBLOAT_* environment variables.
+fun signingValue(key: String): String? =
+    localProps.getProperty("exbloat.$key") ?: System.getenv("EXBLOAT_" + key.replace(Regex("([A-Z])"), "_$1").uppercase())
+val releaseStoreFile = signingValue("storeFile")
 
 android {
-    namespace = "dev.mntl.exbloattv"
+    namespace = "dev.xpdt.exbloattv"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.mntl.exbloattv"
+        applicationId = "dev.xpdt.exbloattv"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -26,13 +29,13 @@ android {
 
     signingConfigs {
         create("release") {
-            // Only configured when local.properties provides the keystore; otherwise
+            // Only configured when local.properties or the environment provides the keystore; otherwise
             // the release variant stays unsigned and debug/test builds are unaffected.
             if (releaseStoreFile != null) {
                 storeFile = rootProject.file(releaseStoreFile)
-                storePassword = localProps.getProperty("exbloat.storePassword")
-                keyAlias = localProps.getProperty("exbloat.keyAlias")
-                keyPassword = localProps.getProperty("exbloat.keyPassword")
+                storePassword = signingValue("storePassword")
+                keyAlias = signingValue("keyAlias")
+                keyPassword = signingValue("keyPassword")
             }
         }
     }
@@ -53,10 +56,45 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+}
+
+/**
+ * Copies the root LICENSE and THIRD_PARTY_NOTICES.md into the app's assets (as licenses/…) so the About screen shows
+ * exactly what the repository says: one source of truth, no copy to drift.
+ */
+abstract class CopyLicenseAssets : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val out = outputDir.get().asFile.resolve("licenses")
+        out.deleteRecursively()
+        out.mkdirs()
+        sources.files.forEach { f ->
+            require(f.isFile) { "missing licence file: ${f.path}" }
+            f.copyTo(out.resolve(f.name))
+        }
+    }
+}
+
+val copyLicenseAssets = tasks.register<CopyLicenseAssets>("copyLicenseAssets") {
+    sources.from(rootProject.file("LICENSE"), rootProject.file("THIRD_PARTY_NOTICES.md"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(copyLicenseAssets, CopyLicenseAssets::outputDir)
     }
 }
 

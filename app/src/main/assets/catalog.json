@@ -1,5 +1,5 @@
 {
- "_notice": "Catalog seeded from android-tv-tune (MIT). See catalog-NOTICE.txt.",
+ "_notice": "Derived from android-tv-tune (MIT, https://github.com/ohernandezdev/android-tv-tune). Full notice: licenses/THIRD_PARTY_NOTICES.md in the app assets.",
  "entries": [
   {
    "pattern": "com.netflix.ninja",

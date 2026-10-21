@@ -368,4 +368,33 @@
     <string name="log_by">By %1$s, %2$s</string>
     <string name="log_unconfirmed">Not confirmed by the TV</string>
     <string name="log_tech" translatable="false">%1$s · %2$s · %3$s → %4$s · %5$s</string>
+
+    <!-- About -->
+    <string name="about_cd">About ExBloat TV</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_description">Clears the ads and clutter off your Android TV from your phone, over Wi-Fi. Every change can be undone.</string>
+    <string name="about_source">Source code on GitHub</string>
+    <string name="about_source_desc" translatable="false">github.com/XploreDatum/exbloattv</string>
+    <string name="about_report">Report a problem</string>
+    <string name="about_report_desc">Opens GitHub Issues in your browser</string>
+    <string name="about_licences">Open-source licences</string>
+    <string name="about_licences_desc">The projects ExBloat TV is built on</string>
+    <string name="about_licence_line">Free and open source under the MIT licence.</string>
+    <string name="about_copyright" translatable="false">Copyright (c) 2026 XploreDatum and contributors</string>
+    <string name="about_flauncher_note">The new home screen, FLauncher, is a separate open-source project by its own authors, under its own licence (GPL-3.0-or-later). ExBloat TV downloads it from FLauncher\'s own releases when you ask for it; it isn\'t part of this app.</string>
+    <string name="about_open_failed">No app on this phone can open %1$s</string>
+    <string name="about_opens_browser_cd">%1$s, opens in your browser</string>
+
+    <!-- Open-source licences -->
+    <string name="licences_subtitle">ExBloat TV is built on the work of these projects. Tap one to read its licence.</string>
+    <string name="licences_this_app">This app</string>
+    <string name="licences_loading">Loading licences…</string>
+    <string name="licences_failed">Couldn\'t read the licences that came with the app.</string>
+    <string name="licence_row">%1$s · %2$s</string>
+    <string name="licence_version">Version: %1$s</string>
+    <string name="licence_licence">Licence: %1$s</string>
+    <string name="licence_source">Source code</string>
+    <string name="licence_text_title">Licence text</string>
+    <string name="licence_read_online">Read the licence</string>
+    <string name="licence_not_found">This licence isn\'t in the list any more.</string>
 </resources>

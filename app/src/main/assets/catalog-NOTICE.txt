@@ -1,2 +1,0 @@
-Catalog seeded from android-tv-tune (MIT). Copyright (c) 2026 android-tv-tune contributors.
-Full licence text: catalog-seed/android-tv-tune.LICENSE in the source repository.
